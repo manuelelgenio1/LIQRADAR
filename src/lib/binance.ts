@@ -89,6 +89,19 @@ export async function fetchOI5mSlope(): Promise<number> {
   return first > 0 ? ((last - first) / first) * 100 : 0;
 }
 
+export interface OIPoint {
+  time: number; // unix seconds
+  oi: number; // BTC
+}
+
+/* Historial de interés abierto en la granularidad del gráfico (para overlay) */
+export async function fetchOIHistory(interval: string, limit: number): Promise<OIPoint[]> {
+  const r = await getJson<{ sumOpenInterest: string; timestamp: number }[]>(
+    `${FUT}/futures/data/openInterestHist?symbol=BTCUSDT&period=${interval}&limit=${limit}`
+  );
+  return r.map((x) => ({ time: Math.floor(Number(x.timestamp) / 1000), oi: Number(x.sumOpenInterest) }));
+}
+
 export async function fetchOpenInterest(): Promise<{ oi: number; change24hPct: number }> {
   const [oi, hist] = await Promise.all([
     getJson<{ openInterest: string }>(`${FUT}/fapi/v1/openInterest?symbol=BTCUSDT`),

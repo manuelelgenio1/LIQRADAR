@@ -17,8 +17,9 @@ import { PredictionPanel } from "./components/PredictionPanel";
 import { FeedPanel } from "./components/FeedPanel";
 import { AccumulationPanel } from "./components/AccumulationPanel";
 import { TrackRecord } from "./components/TrackRecord";
-import { RumboGauge } from "./components/RumboGauge";
 import { BacktestLab } from "./components/BacktestLab";
+import { RumboGauge } from "./components/RumboGauge";
+import { LiqHeatmap } from "./components/LiqHeatmap";
 
 const STEPS = [
   {
@@ -140,6 +141,7 @@ export default function App() {
   const r2 = useReveal();
   const r3 = useReveal();
   const r4 = useReveal();
+  const r5 = useReveal();
 
   return (
     <div className="relative min-h-screen font-body">
@@ -180,7 +182,12 @@ export default function App() {
                   </div>
                 </div>
                 {market.candles.length > 0 ? (
-                  <PriceChart candles={market.candles} clusters={analysis?.clusters ?? []} spot={market.spot} />
+                  <PriceChart
+                    candles={market.candles}
+                    clusters={analysis?.clusters ?? []}
+                    spot={market.spot}
+                    oiHistory={market.oiHistory}
+                  />
                 ) : (
                   <div className="flex h-[340px] animate-pulse items-center justify-center rounded-md border border-line/50 font-mono text-xs text-dusk sm:h-[400px]">
                     CARGANDO VELAS…
@@ -228,6 +235,18 @@ export default function App() {
             </div>
           </div>
 
+          {/* heatmap 2D tiempo × precio */}
+          <section className="panel reveal mt-5" ref={r4}>
+            {market.candles.length > 4 && (
+              <LiqHeatmap
+                candles={market.candles}
+                leverages={levs}
+                lookback={{ "12h": 16, "24h": 20, "72h": 24, "7d": 18 }[tf]}
+                label={`ventana ${TF_CONFIG[tf].label}`}
+              />
+            )}
+          </section>
+
           {/* acumulación + track record */}
           <div className="reveal mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_1fr]" ref={r3}>
             <section className="panel">
@@ -254,7 +273,7 @@ export default function App() {
           </div>
 
           {/* laboratorio de validación */}
-          <section className="panel reveal mt-5" ref={r4}>
+          <section className="panel reveal mt-5" ref={r5}>
             <BacktestLab spot={market.spot} />
           </section>
 

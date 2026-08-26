@@ -1,18 +1,31 @@
 import { useEffect, useRef } from "react";
-import { createChart, ColorType, LineStyle, type IChartApi, type IPriceLine, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
+import {
+  createChart,
+  ColorType,
+  LineStyle,
+  type IChartApi,
+  type IPriceLine,
+  type ISeriesApi,
+  type UTCTimestamp,
+} from "lightweight-charts";
 import type { Candle, Cluster } from "../lib/engine";
+import type { OIPoint } from "../lib/binance";
 
 interface Props {
   candles: Candle[];
   clusters: Cluster[];
   spot: number;
+  oiHistory?: OIPoint[];
 }
 
-export function PriceChart({ candles, clusters, spot }: Props) {
+export function PriceChart({ candles, clusters, spot, oiHistory }: Props) {
   const elRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const oiRef = useRef<ISeriesApi<"Line"> | null>(null);
   const linesRef = useRef<IPriceLine[]>([]);
+  const lenRef = useRef(0);
 
   useEffect(() => {
     if (!elRef.current) return;
@@ -35,24 +48,52 @@ export function PriceChart({ candles, clusters, spot }: Props) {
         horzLine: { color: "rgba(63,182,255,0.4)", labelBackgroundColor: "#0d1a30" },
       },
     });
+
     const series = chart.addCandlestickSeries({
       upColor: "#2fd6a5",
       downColor: "#ff4d6d",
       wickUpColor: "rgba(47,214,165,0.75)",
       wickDownColor: "rgba(255,77,109,0.75)",
       borderVisible: false,
+      priceScaleId: "right",
     });
+    chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.06, bottom: 0.26 } });
+
+    // volumen agresivo (compra vs venta) abajo
+    const vol = chart.addHistogramSeries({
+      priceScaleId: "vol",
+      priceFormat: { type: "volume" },
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 }, visible: false });
+
+    // interés abierto superpuesto (línea azul)
+    const oi = chart.addLineSeries({
+      color: "#3fb6ff",
+      lineWidth: 2,
+      priceScaleId: "oi",
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    chart.priceScale("oi").applyOptions({ scaleMargins: { top: 0.02, bottom: 0.55 }, visible: false });
+
     chartRef.current = chart;
     seriesRef.current = series;
+    volRef.current = vol;
+    oiRef.current = oi;
+
     return () => {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      volRef.current = null;
+      oiRef.current = null;
       linesRef.current = [];
     };
   }, []);
 
-  const lenRef = useRef(0);
   useEffect(() => {
     if (!seriesRef.current || candles.length === 0) return;
     seriesRef.current.setData(
@@ -64,11 +105,25 @@ export function PriceChart({ candles, clusters, spot }: Props) {
         close: c.close,
       }))
     );
+    volRef.current?.setData(
+      candles.map((c) => {
+        const buy = c.takerBuyQuote ?? c.quoteVolume * (c.close >= c.open ? 0.56 : 0.44);
+        const delta = 2 * buy - c.quoteVolume;
+        return {
+          time: c.time as UTCTimestamp,
+          value: c.quoteVolume,
+          color: delta >= 0 ? "rgba(47,214,165,0.35)" : "rgba(255,77,109,0.35)",
+        };
+      })
+    );
+    if (oiRef.current && oiHistory && oiHistory.length > 1) {
+      oiRef.current.setData(oiHistory.map((o) => ({ time: o.time as UTCTimestamp, value: o.oi })));
+    }
     if (lenRef.current !== candles.length) {
       lenRef.current = candles.length;
       chartRef.current?.timeScale().fitContent();
     }
-  }, [candles]);
+  }, [candles, oiHistory]);
 
   useEffect(() => {
     const series = seriesRef.current;
@@ -99,5 +154,5 @@ export function PriceChart({ candles, clusters, spot }: Props) {
     });
   }, [clusters, spot]);
 
-  return <div ref={elRef} className="h-[340px] w-full sm:h-[400px]" />;
+  return <div ref={elRef} className="h-[380px] w-full sm:h-[440px]" />;
 }

@@ -6,6 +6,7 @@ import {
   fetchFundingHistory,
   fetchKlines,
   fetchOI5mSlope,
+  fetchOIHistory,
   fetchOpenInterest,
   fetchRatios,
   fetchTakerRatio,
@@ -13,6 +14,7 @@ import {
   simKlines,
   simLiqEvent,
   simTick,
+  type OIPoint,
 } from "../lib/binance";
 
 export type Timeframe = "12h" | "24h" | "72h" | "7d";
@@ -44,6 +46,7 @@ export interface MarketData {
   takerTrend: number;
   premium: number;
   candles: Candle[];
+  oiHistory: OIPoint[];
   liqEvents: LiqEvent[];
   sessionLong: number;
   sessionShort: number;
@@ -64,6 +67,7 @@ export function useMarket(tf: Timeframe): MarketData {
   const [ratios, setRatios] = useState({ global: 1.05, top: 0.97 });
   const [taker, setTaker] = useState({ ratio: 1, trend: 0 });
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [oiHistory, setOiHistory] = useState<OIPoint[]>([]);
   const [liqEvents, setLiqEvents] = useState<LiqEvent[]>([]);
   const [session, setSession] = useState({ long: 0, short: 0 });
   const [sources, setSources] = useState<MarketData["sources"]>({ klines: "sim", metrics: "sim", price: "sim", liq: "sim" });
@@ -83,6 +87,12 @@ export function useMarket(tf: Timeframe): MarketData {
         setCandles(k);
         setSources((s) => ({ ...s, klines: "live" }));
         setSpot(k[k.length - 1].close);
+        try {
+          const h = await fetchOIHistory(cfg.interval, cfg.limit);
+          if (alive && h.length > 1) setOiHistory(h);
+        } catch {
+          /* el overlay de OI es opcional */
+        }
       } catch {
         if (!alive) return;
         setCandles(simKlines(spotRef.current, cfg.limit, cfg.ms));
@@ -270,6 +280,7 @@ export function useMarket(tf: Timeframe): MarketData {
     takerTrend: taker.trend,
     premium: funding.premium,
     candles,
+    oiHistory,
     liqEvents,
     sessionLong: session.long,
     sessionShort: session.short,
