@@ -70,18 +70,26 @@ export interface VerdictInput {
   spot: number;
   longPool: number;
   shortPool: number;
+  nearLongPool: number; // pools a menos de nearPct del spot
+  nearShortPool: number;
   clusters: Cluster[];
   fundingRate: number; // fracción por 8h (0.0001 = 0.01%)
+  fundingTrend: number; // último funding − primero (8 liquidaciones ≈ 64h)
   globalRatio: number; // cuentas long/short
   topRatio: number; // posiciones top trader
+  takerRatio: number; // volumen taker compra/venta en futuros (1h)
   oiChange24h: number; // %
+  oiSlope5m: number; // pendiente del OI en 2.5h (%)
   priceChange24h: number; // %
+  premium: number; // (mark − index)/index → prima de futuros
   atr1h: number; // ATR en unidades de precio por hora
   liveLongLiq: number; // USDT liquidados a longs en la sesión
   liveShortLiq: number;
   cvdPct: number; // delta neto / volumen total de la ventana
   cvdDiv: "bear" | "bull" | null;
   oiUsdt: number; // OI nocional en USDT (0 = desconocido)
+  fastSlopePct: number; // tendencia del tercio reciente (%)
+  slowSlopePct: number; // tendencia de toda la ventana (%)
 }
 
 const clamp = (v: number, lo = -1, hi = 1) => Math.min(hi, Math.max(lo, v));
@@ -139,8 +147,9 @@ export function estimateLiquidationMap(
   leverages: number[],
   rangePct: number,
   binsCount = 58,
-  oiUsdt = 0
-): { bins: LiqBin[]; longPool: number; shortPool: number; clusters: Cluster[] } {
+  oiUsdt = 0,
+  nearPct = 2
+): { bins: LiqBin[]; longPool: number; shortPool: number; nearLongPool: number; nearShortPool: number; clusters: Cluster[] } {
   const hi = spot * (1 + rangePct);
   const lo = spot * (1 - rangePct);
   const step = (hi - lo) / binsCount;
@@ -196,12 +205,20 @@ export function estimateLiquidationMap(
   const bins: LiqBin[] = [];
   let longPool = 0;
   let shortPool = 0;
+  let nearLongPool = 0;
+  let nearShortPool = 0;
   for (let i = 0; i < binsCount; i++) {
     const price = hi - (i + 0.5) * step;
     const estNotional = (smooth[i] / totalSmooth) * poolScale;
     const side: "long" | "short" = price < spot ? "long" : "short";
-    if (side === "long") longPool += estNotional;
-    else shortPool += estNotional;
+    const near = Math.abs(((price - spot) / spot) * 100) <= nearPct;
+    if (side === "long") {
+      longPool += estNotional;
+      if (near) nearLongPool += estNotional;
+    } else {
+      shortPool += estNotional;
+      if (near) nearShortPool += estNotional;
+    }
     bins.push({ price, intensity: smooth[i] / max, side, estNotional });
   }
 
@@ -236,7 +253,7 @@ export function estimateLiquidationMap(
     })
     .sort((a, b) => b.estNotional * b.intensity - a.estNotional * a.intensity);
 
-  return { bins, longPool, shortPool, clusters };
+  return { bins, longPool, shortPool, nearLongPool, nearShortPool, clusters };
 }
 
 export function atrOf(candles: Candle[]): number {
@@ -268,7 +285,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? `Longs pagan ${(inp.fundingRate * 100).toFixed(4)}% c/8h → multitud long`
         : `Shorts pagan ${(Math.abs(inp.fundingRate) * 100).toFixed(4)}% c/8h → multitud short`,
     score: fScore,
-    weight: 0.18,
+    weight: 0.13,
   });
   if (Math.abs(inp.fundingRate) >= 0.0003) {
     warnings.push({
@@ -280,28 +297,45 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     });
   }
 
-  // 2 · Ratio global de cuentas
+  // 2 · Tendencia del funding (¿la multitud sigue apilándose?)
+  const ftScore = clamp(-inp.fundingTrend / 0.00018);
+  factors.push({
+    id: "fundingTrend",
+    label: "Tendencia del funding (64h)",
+    detail:
+      Math.abs(inp.fundingTrend) < 0.00002
+        ? "Funding estable: la multitud no crece"
+        : inp.fundingTrend > 0
+          ? `Funding subiendo (+${(inp.fundingTrend * 100).toFixed(4)}%): se apilan más longs`
+          : `Funding cayendo (${(inp.fundingTrend * 100).toFixed(4)}%): se apilan más shorts`,
+    score: ftScore,
+    weight: 0.06,
+  });
+
+  // 3 · Ratio global de cuentas
   const gScore = clamp((1 - inp.globalRatio) * 1.15);
   factors.push({
     id: "global",
     label: "Cuentas retail long/short",
     detail: `${inp.globalRatio.toFixed(2)}× → ${inp.globalRatio > 1 ? "retail inclinado a LONG" : "retail inclinado a SHORT"}`,
     score: gScore,
-    weight: 0.14,
+    weight: 0.09,
   });
 
-  // 3 · Top traders (posiciones)
+  // 4 · Top traders (posiciones)
   const tScore = clamp((1 - inp.topRatio) * 0.95);
   factors.push({
     id: "top",
     label: "Posiciones de top traders",
     detail: `Ratio ${inp.topRatio.toFixed(2)} → ${inp.topRatio > 1 ? "ballenas en LONG" : "ballenas en SHORT"}`,
     score: tScore,
-    weight: 0.16,
+    weight: 0.11,
   });
 
-  // 4 · Desequilibrio de pools de liquidación (imán de liquidez)
-  const pRaw = (inp.shortPool - inp.longPool) / (inp.shortPool + inp.longPool + 1e-9);
+  // 5 · Pools de liquidación ponderados por cercanía (la liquidez próxima es más magnética)
+  const totalRaw = (inp.shortPool - inp.longPool) / (inp.shortPool + inp.longPool + 1e-9);
+  const nearRaw = (inp.nearShortPool - inp.nearLongPool) / (inp.nearShortPool + inp.nearLongPool + 1e-9);
+  const pRaw = 0.6 * nearRaw + 0.4 * totalRaw;
   const pScore = clamp(pRaw * 1.7);
   const poolX = inp.shortPool > inp.longPool ? inp.shortPool / Math.max(inp.longPool, 1) : inp.longPool / Math.max(inp.shortPool, 1);
   factors.push({
@@ -309,23 +343,54 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     label: "Pools de liquidación",
     detail:
       pRaw >= 0
-        ? `${poolX.toFixed(1)}× más liquidez de shorts ARRIBA → imán alcista`
-        : `${poolX.toFixed(1)}× más liquidez de longs ABAJO → imán bajista`,
+        ? `${poolX.toFixed(1)}× más shorts ARRIBA (cercanos: ${(nearRaw * 100).toFixed(0)}% neto) → imán alcista`
+        : `${poolX.toFixed(1)}× más longs ABAJO (cercanos: ${(nearRaw * 100).toFixed(0)}% neto) → imán bajista`,
     score: pScore,
-    weight: 0.22,
+    weight: 0.19,
   });
 
-  // 5 · Interés abierto + tendencia 24h
+  // 6 · Interés abierto + tendencia 24h
   const oScore = clamp(Math.sign(inp.priceChange24h) * Math.min(1, Math.abs(inp.oiChange24h) / 6));
   factors.push({
     id: "oi",
     label: "Interés abierto + impulso 24h",
     detail: `OI ${inp.oiChange24h >= 0 ? "+" : ""}${inp.oiChange24h.toFixed(1)}% · precio ${inp.priceChange24h >= 0 ? "+" : ""}${inp.priceChange24h.toFixed(1)}%`,
     score: oScore,
-    weight: 0.1,
+    weight: 0.07,
   });
 
-  // 6 · Liquidaciones en vivo: si ya liquidaron longs, el combustible bajista se gastó
+  // 7 · Pendiente del OI en 5m: apalancamiento fresco entrando AHORA
+  let osScore = 0;
+  let osDetail: string;
+  const pxSign = Math.sign(inp.priceChange24h) || 1;
+  if (inp.oiSlope5m > 0.3) {
+    osScore = clamp(-Math.sign(inp.oiSlope5m) * pxSign * Math.min(1, inp.oiSlope5m / 1.5));
+    osDetail =
+      pxSign > 0
+        ? `OI +${inp.oiSlope5m.toFixed(2)}% en 2.5h con precio al alza → longs NUEVOS entrando (combustible abajo)`
+        : `OI +${inp.oiSlope5m.toFixed(2)}% en 2.5h con precio a la baja → shorts NUEVOS entrando (combustible arriba)`;
+  } else if (inp.oiSlope5m < -0.3) {
+    osScore = clamp(-pxSign * 0.3);
+    osDetail = `OI ${inp.oiSlope5m.toFixed(2)}% en 2.5h → desapalancamiento: el movimiento ya gastó parte de su combustible`;
+  } else {
+    osDetail = `OI ${inp.oiSlope5m >= 0 ? "+" : ""}${inp.oiSlope5m.toFixed(2)}% en 2.5h → apalancamiento estable`;
+  }
+  factors.push({ id: "oiSlope", label: "OI en tiempo real (5m)", detail: osDetail, score: osScore, weight: 0.09 });
+
+  // 8 · Flujo de takers en futuros (quién cruza el spread)
+  const tkScore = clamp((1 - inp.takerRatio) * 2.2);
+  factors.push({
+    id: "taker",
+    label: "Volumen taker futuros",
+    detail:
+      inp.takerRatio >= 1
+        ? `Ratio ${inp.takerRatio.toFixed(2)} → dominan las compras agresivas (multitud long)`
+        : `Ratio ${inp.takerRatio.toFixed(2)} → dominan las ventas agresivas (multitud short)`,
+    score: tkScore,
+    weight: 0.08,
+  });
+
+  // 9 · Liquidaciones en vivo: si ya liquidaron longs, el combustible bajista se gastó
   const tot = inp.liveLongLiq + inp.liveShortLiq;
   const lRaw = tot > 0 ? (inp.liveLongLiq - inp.liveShortLiq) / tot : 0;
   const lScore = clamp(lRaw * 1.3);
@@ -339,15 +404,15 @@ export function computeVerdict(inp: VerdictInput): Verdict {
           ? "Ya se liquidaron más LONGS → combustible bajista gastado"
           : "Ya se liquidaron más SHORTS → combustible alcista gastado",
     score: lScore,
-    weight: 0.1,
+    weight: 0.07,
   });
 
-  // 7 · Delta de takers (CVD): compra agresiva = multitud long apilada
+  // 10 · Delta de takers spot (CVD): compra agresiva = multitud long apilada
   const cvdBase = clamp(-inp.cvdPct * 3);
   const cvdScore = clamp(cvdBase + (inp.cvdDiv === "bear" ? -0.35 : inp.cvdDiv === "bull" ? 0.35 : 0));
   factors.push({
     id: "cvd",
-    label: "Delta de takers (CVD)",
+    label: "Delta spot (CVD)",
     detail:
       inp.cvdDiv === "bear"
         ? "Divergencia: precio sube sin compra agresiva → compradores agotados"
@@ -355,13 +420,43 @@ export function computeVerdict(inp: VerdictInput): Verdict {
           ? "Divergencia: precio baja pero absorben la venta → vendedores agotados"
           : `Compra neta ${(inp.cvdPct * 100).toFixed(1)}% del volumen → ${inp.cvdPct > 0.02 ? "multitud comprando en ask" : inp.cvdPct < -0.02 ? "multitud vendiendo en bid" : "flujo equilibrado"}`,
     score: cvdScore,
-    weight: 0.1,
+    weight: 0.07,
   });
   if (inp.cvdDiv === "bear") {
     warnings.push({ tone: "danger", text: "Divergencia CVD bajista: el precio sube sin compradores agresivos — combustible de long squeeze activo" });
   } else if (inp.cvdDiv === "bull") {
     warnings.push({ tone: "warn", text: "Divergencia CVD alcista: la venta está siendo absorbida — combustible de short squeeze activo" });
   }
+
+  // 11 · Prima de futuros (mark vs index): futuros caros = longs apalancados
+  const prScore = clamp(-inp.premium / 0.0008);
+  factors.push({
+    id: "premium",
+    label: "Prima futuros/spot",
+    detail:
+      Math.abs(inp.premium) < 0.0001
+        ? "Futuros a la par del spot: sin sesgo de apalancamiento"
+        : inp.premium > 0
+          ? `Futuros ${(inp.premium * 100).toFixed(3)}% sobre el spot → longs apalancados pagan la prima`
+          : `Futuros ${(inp.premium * 100).toFixed(3)}% bajo el spot → shorts apalancados dominan`,
+    score: prScore,
+    weight: 0.05,
+  });
+
+  // 12 · Confluencia multi-plazo: tendencia rápida vs tendencia de fondo
+  const fast = inp.fastSlopePct;
+  const slow = inp.slowSlopePct;
+  const aligned = Math.sign(fast) === Math.sign(slow) && Math.abs(fast) > 0.15 && Math.abs(slow) > 0.15;
+  const cfScore = aligned ? clamp(Math.sign(fast) * 0.6) : Math.abs(fast) > 0.15 ? clamp(Math.sign(fast) * 0.15) : 0;
+  factors.push({
+    id: "mtf",
+    label: "Confluencia multi-plazo",
+    detail: aligned
+      ? `Tendencia reciente (${fast >= 0 ? "+" : ""}${fast.toFixed(1)}%) y de fondo (${slow >= 0 ? "+" : ""}${slow.toFixed(1)}%) ALINEADAS`
+      : `Tendencia reciente (${fast >= 0 ? "+" : ""}${fast.toFixed(1)}%) vs fondo (${slow >= 0 ? "+" : ""}${slow.toFixed(1)}%) en conflicto`,
+    score: cfScore,
+    weight: 0.06,
+  });
 
   const wSum = factors.reduce((a, f) => a + f.weight, 0);
   const score = factors.reduce((a, f) => a + f.score * f.weight, 0) / wSum;
@@ -377,7 +472,8 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   // penalizada por volatilidad extrema (régimen ATR alto = menos certeza)
   const atrPct = inp.spot > 0 ? (inp.atr1h / inp.spot) * 100 : 0;
   const volPenalty = Math.min(16, Math.max(0, (atrPct - 0.45) * 40));
-  const confidence = Math.max(15, Math.round(Math.min(93, 24 + Math.abs(score) * 62 + align * 5) - volPenalty));
+  const mtfBonus = aligned ? 5 : 0;
+  const confidence = Math.max(15, Math.round(Math.min(93, 24 + Math.abs(score) * 62 + align * 5 + mtfBonus) - volPenalty));
   if (volPenalty >= 10) {
     warnings.push({ tone: "warn", text: `Volatilidad elevada (ATR ${atrPct.toFixed(2)}%/h): confianza reducida, las barridas son más violentas e impredecibles` });
   }

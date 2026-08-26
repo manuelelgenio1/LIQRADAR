@@ -51,9 +51,42 @@ export async function fetchTicker24h(): Promise<Ticker24h> {
   };
 }
 
-export async function fetchFunding(): Promise<{ rate: number; mark: number; nextTime: number }> {
+export async function fetchFunding(): Promise<{ rate: number; mark: number; index: number; nextTime: number }> {
   const r = await getJson<Record<string, string>>(`${FUT}/fapi/v1/premiumIndex?symbol=BTCUSDT`);
-  return { rate: Number(r.lastFundingRate), mark: Number(r.markPrice), nextTime: Number(r.nextFundingTime) };
+  return {
+    rate: Number(r.lastFundingRate),
+    mark: Number(r.markPrice),
+    index: Number(r.indexPrice),
+    nextTime: Number(r.nextFundingTime),
+  };
+}
+
+/* Historial de funding (8 liquidaciones ≈ 64h) → tendencia de la multitud */
+export async function fetchFundingHistory(): Promise<number[]> {
+  const r = await getJson<{ fundingRate: string }[]>(`${FUT}/fapi/v1/fundingRate?symbol=BTCUSDT&limit=8`);
+  return r.map((x) => Number(x.fundingRate));
+}
+
+/* Ratio de volumen taker compra/venta en futuros (agresividad real) */
+export async function fetchTakerRatio(): Promise<{ ratio: number; trend: number }> {
+  const r = await getJson<{ buySellRatio: string }[]>(
+    `${FUT}/futures/data/takerlongshortRatio?symbol=BTCUSDT&period=1h&limit=7`
+  );
+  const vals = r.map((x) => Number(x.buySellRatio));
+  const ratio = vals[vals.length - 1] ?? 1;
+  const trend = ratio - (vals[0] ?? ratio);
+  return { ratio, trend };
+}
+
+/* Pendiente del interés abierto en velas de 5 min (≈ 2.5h) */
+export async function fetchOI5mSlope(): Promise<number> {
+  const r = await getJson<{ sumOpenInterest: string }[]>(
+    `${FUT}/futures/data/openInterestHist?symbol=BTCUSDT&period=5m&limit=30`
+  );
+  if (r.length < 2) return 0;
+  const first = Number(r[0].sumOpenInterest);
+  const last = Number(r[r.length - 1].sumOpenInterest);
+  return first > 0 ? ((last - first) / first) * 100 : 0;
 }
 
 export async function fetchOpenInterest(): Promise<{ oi: number; change24hPct: number }> {
