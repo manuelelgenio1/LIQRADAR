@@ -1,5 +1,7 @@
 /* ============================================================
    LiqRadar — motor de estimación de liquidaciones y veredicto
+   v2: margen de mantenimiento real, anclaje a OI, CVD,
+       cascadas y confianza ajustada por volatilidad
    ============================================================ */
 
 export interface Candle {
@@ -9,6 +11,7 @@ export interface Candle {
   low: number;
   close: number;
   quoteVolume: number; // USDT
+  takerBuyQuote?: number; // USDT de compra agresiva (taker)
 }
 
 export interface LiqBin {
@@ -40,8 +43,13 @@ export interface Factor {
   id: string;
   label: string;
   detail: string;
-  score: number; // -1..1  (negativo = presión bajista / long squeeze)
+  score: number; // -1..1  (negativo = long squeeze / bajista)
   weight: number;
+}
+
+export interface Warning {
+  tone: "warn" | "danger";
+  text: string;
 }
 
 export interface Verdict {
@@ -54,6 +62,8 @@ export interface Verdict {
   invalidation: Cluster | null;
   windowH: [number, number];
   factors: Factor[];
+  cascade: Cluster[]; // clusters dentro de 1 ATR (riesgo de liquidación en cadena)
+  warnings: Warning[];
 }
 
 export interface VerdictInput {
@@ -63,25 +73,73 @@ export interface VerdictInput {
   clusters: Cluster[];
   fundingRate: number; // fracción por 8h (0.0001 = 0.01%)
   globalRatio: number; // cuentas long/short
-  topRatio: number; // posiciones top traders
+  topRatio: number; // posiciones top trader
   oiChange24h: number; // %
   priceChange24h: number; // %
-  atr1h: number;
+  atr1h: number; // ATR en unidades de precio por hora
   liveLongLiq: number; // USDT liquidados a longs en la sesión
   liveShortLiq: number;
+  cvdPct: number; // delta neto / volumen total de la ventana
+  cvdDiv: "bear" | "bull" | null;
+  oiUsdt: number; // OI nocional en USDT (0 = desconocido)
 }
 
 const clamp = (v: number, lo = -1, hi = 1) => Math.min(hi, Math.max(lo, v));
 
 /* ------------------------------------------------------------
-   Mapa de liquidación estimado a partir de velas + apalancamiento
+   Distancia real de liquidación con margen de mantenimiento
+   Binance BTC tier 1: MMR 0.40%. Distancia = 1/L − MMR.
+   10x → 9.6% · 25x → 3.6% · 50x → 1.6% · 100x → 0.6%
+   ------------------------------------------------------------ */
+const MMR = 0.004;
+export const liqDistance = (L: number) => Math.max(1 / L - MMR, 0.001);
+
+/* ------------------------------------------------------------
+   CVD — volumen delta acumulado (compra agresiva vs venta)
+   ------------------------------------------------------------ */
+export interface CvdInfo {
+  series: number[];
+  cvdPct: number; // -1..1
+  cvdNet: number; // USDT netos
+  divergence: "bear" | "bull" | null;
+}
+
+export function computeCvd(candles: Candle[]): CvdInfo {
+  let cvd = 0;
+  let totalQ = 0;
+  const series: number[] = [];
+  for (const c of candles) {
+    const buy = c.takerBuyQuote ?? c.quoteVolume * (c.close >= c.open ? 0.56 : 0.44);
+    const delta = 2 * buy - c.quoteVolume;
+    cvd += delta;
+    totalQ += c.quoteVolume;
+    series.push(cvd);
+  }
+  const cvdPct = totalQ > 0 ? cvd / totalQ : 0;
+  const n = candles.length;
+  let divergence: "bear" | "bull" | null = null;
+  if (n >= 9) {
+    const third = Math.floor(n / 3);
+    const priceNow = candles[n - 1].close;
+    const priceMid = candles[n - 1 - third].close;
+    const cvdNow = series[n - 1];
+    const cvdMid = series[n - 1 - third];
+    if (priceNow > priceMid * 1.002 && cvdNow < cvdMid) divergence = "bear";
+    else if (priceNow < priceMid * 0.998 && cvdNow > cvdMid) divergence = "bull";
+  }
+  return { series, cvdPct, cvdNet: cvd, divergence };
+}
+
+/* ------------------------------------------------------------
+   Mapa de liquidación estimado (velas + apalancamiento + OI)
    ------------------------------------------------------------ */
 export function estimateLiquidationMap(
   candles: Candle[],
   spot: number,
   leverages: number[],
   rangePct: number,
-  binsCount = 58
+  binsCount = 58,
+  oiUsdt = 0
 ): { bins: LiqBin[]; longPool: number; shortPool: number; clusters: Cluster[] } {
   const hi = spot * (1 + rangePct);
   const lo = spot * (1 - rangePct);
@@ -109,12 +167,12 @@ export function estimateLiquidationMap(
     const volW = Math.pow(c.quoteVolume / totalQuote, 0.5) * 46;
     const base = recency * volW;
     for (const L of leverages) {
-      const d = 0.985 / L;
+      const d = liqDistance(L);
       const lw = levWeight[L] ?? 0.7;
-      // longs abiertos cerca de máximos/cierre → su liquidación cae debajo
+      // longs abiertos cerca de máximos/cierre → liquidación debajo
       add(c.high * (1 - d), base * 0.9 * lw);
       add(c.close * (1 - d), base * 0.45 * lw);
-      // shorts abiertos cerca de mínimos/cierre → su liquidación queda arriba
+      // shorts abiertos cerca de mínimos/cierre → liquidación arriba
       add(c.low * (1 + d), base * 0.9 * lw);
       add(c.close * (1 + d), base * 0.45 * lw);
     }
@@ -130,21 +188,22 @@ export function estimateLiquidationMap(
   }
   const max = Math.max(...Array.from(smooth), 1e-9);
 
+  // anclaje nocional: si conocemos el OI, repartimos una fracción liquidable
+  // dentro del rango; si no, estimamos desde el volumen de la ventana
+  const poolScale = oiUsdt > 0 ? oiUsdt * 0.065 : totalQuote * 0.05;
+  const totalSmooth = Array.from(smooth).reduce((a, b) => a + b, 0) || 1;
+
   const bins: LiqBin[] = [];
+  let longPool = 0;
+  let shortPool = 0;
   for (let i = 0; i < binsCount; i++) {
     const price = hi - (i + 0.5) * step;
-    bins.push({
-      price,
-      intensity: smooth[i] / max,
-      side: price < spot ? "long" : "short",
-      estNotional: (smooth[i] / max) * totalQuote * 0.055 * (1 / Math.sqrt(leverages.length || 1)),
-    });
+    const estNotional = (smooth[i] / totalSmooth) * poolScale;
+    const side: "long" | "short" = price < spot ? "long" : "short";
+    if (side === "long") longPool += estNotional;
+    else shortPool += estNotional;
+    bins.push({ price, intensity: smooth[i] / max, side, estNotional });
   }
-
-  const longPool = bins.filter((b) => b.side === "long").reduce((a, b) => a + b.estNotional * b.intensity, 0) +
-    bins.filter((b) => b.side === "long").reduce((a, b) => a + b.intensity, 0) * 1e6;
-  const shortPool = bins.filter((b) => b.side === "short").reduce((a, b) => a + b.estNotional * b.intensity, 0) +
-    bins.filter((b) => b.side === "short").reduce((a, b) => a + b.intensity, 0) * 1e6;
 
   // detección de concentraciones (picos locales)
   const peaks: { i: number; v: number }[] = [];
@@ -197,6 +256,7 @@ export function atrOf(candles: Candle[]): number {
    ------------------------------------------------------------ */
 export function computeVerdict(inp: VerdictInput): Verdict {
   const factors: Factor[] = [];
+  const warnings: Warning[] = [];
 
   // 1 · Funding: si los longs pagan, hay multitud long → combustible bajista
   const fScore = clamp(-inp.fundingRate / 0.00035);
@@ -208,8 +268,17 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? `Longs pagan ${(inp.fundingRate * 100).toFixed(4)}% c/8h → multitud long`
         : `Shorts pagan ${(Math.abs(inp.fundingRate) * 100).toFixed(4)}% c/8h → multitud short`,
     score: fScore,
-    weight: 0.2,
+    weight: 0.18,
   });
+  if (Math.abs(inp.fundingRate) >= 0.0003) {
+    warnings.push({
+      tone: "warn",
+      text:
+        inp.fundingRate > 0
+          ? "Funding extremo: los longs pagan muy caro — históricamente precede sacudidas bajistas"
+          : "Funding extremo: los shorts pagan muy caro — históricamente precede squeezes alcistas",
+    });
+  }
 
   // 2 · Ratio global de cuentas
   const gScore = clamp((1 - inp.globalRatio) * 1.15);
@@ -218,7 +287,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     label: "Cuentas retail long/short",
     detail: `${inp.globalRatio.toFixed(2)}× → ${inp.globalRatio > 1 ? "retail inclinado a LONG" : "retail inclinado a SHORT"}`,
     score: gScore,
-    weight: 0.15,
+    weight: 0.14,
   });
 
   // 3 · Top traders (posiciones)
@@ -228,7 +297,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     label: "Posiciones de top traders",
     detail: `Ratio ${inp.topRatio.toFixed(2)} → ${inp.topRatio > 1 ? "ballenas en LONG" : "ballenas en SHORT"}`,
     score: tScore,
-    weight: 0.17,
+    weight: 0.16,
   });
 
   // 4 · Desequilibrio de pools de liquidación (imán de liquidez)
@@ -243,7 +312,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? `${poolX.toFixed(1)}× más liquidez de shorts ARRIBA → imán alcista`
         : `${poolX.toFixed(1)}× más liquidez de longs ABAJO → imán bajista`,
     score: pScore,
-    weight: 0.24,
+    weight: 0.22,
   });
 
   // 5 · Interés abierto + tendencia 24h
@@ -253,7 +322,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     label: "Interés abierto + impulso 24h",
     detail: `OI ${inp.oiChange24h >= 0 ? "+" : ""}${inp.oiChange24h.toFixed(1)}% · precio ${inp.priceChange24h >= 0 ? "+" : ""}${inp.priceChange24h.toFixed(1)}%`,
     score: oScore,
-    weight: 0.12,
+    weight: 0.1,
   });
 
   // 6 · Liquidaciones en vivo: si ya liquidaron longs, el combustible bajista se gastó
@@ -267,11 +336,32 @@ export function computeVerdict(inp: VerdictInput): Verdict {
       tot === 0
         ? "Sin liquidaciones registradas aún"
         : lRaw >= 0
-          ? `Ya se liquidaron más LONGS → combustible bajista gastado`
-          : `Ya se liquidaron más SHORTS → combustible alcista gastado`,
+          ? "Ya se liquidaron más LONGS → combustible bajista gastado"
+          : "Ya se liquidaron más SHORTS → combustible alcista gastado",
     score: lScore,
-    weight: 0.12,
+    weight: 0.1,
   });
+
+  // 7 · Delta de takers (CVD): compra agresiva = multitud long apilada
+  const cvdBase = clamp(-inp.cvdPct * 3);
+  const cvdScore = clamp(cvdBase + (inp.cvdDiv === "bear" ? -0.35 : inp.cvdDiv === "bull" ? 0.35 : 0));
+  factors.push({
+    id: "cvd",
+    label: "Delta de takers (CVD)",
+    detail:
+      inp.cvdDiv === "bear"
+        ? "Divergencia: precio sube sin compra agresiva → compradores agotados"
+        : inp.cvdDiv === "bull"
+          ? "Divergencia: precio baja pero absorben la venta → vendedores agotados"
+          : `Compra neta ${(inp.cvdPct * 100).toFixed(1)}% del volumen → ${inp.cvdPct > 0.02 ? "multitud comprando en ask" : inp.cvdPct < -0.02 ? "multitud vendiendo en bid" : "flujo equilibrado"}`,
+    score: cvdScore,
+    weight: 0.1,
+  });
+  if (inp.cvdDiv === "bear") {
+    warnings.push({ tone: "danger", text: "Divergencia CVD bajista: el precio sube sin compradores agresivos — combustible de long squeeze activo" });
+  } else if (inp.cvdDiv === "bull") {
+    warnings.push({ tone: "warn", text: "Divergencia CVD alcista: la venta está siendo absorbida — combustible de short squeeze activo" });
+  }
 
   const wSum = factors.reduce((a, f) => a + f.weight, 0);
   const score = factors.reduce((a, f) => a + f.score * f.weight, 0) / wSum;
@@ -282,12 +372,37 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   else if (score < -0.14) direction = "down";
 
   const align = factors.filter((f) => (direction === "neutral" ? false : Math.sign(f.score) === Math.sign(score))).length;
-  const confidence = Math.round(Math.min(93, 24 + Math.abs(score) * 62 + align * 5));
+
+  // confianza: base + magnitud del sesgo + alineación de factores,
+  // penalizada por volatilidad extrema (régimen ATR alto = menos certeza)
+  const atrPct = inp.spot > 0 ? (inp.atr1h / inp.spot) * 100 : 0;
+  const volPenalty = Math.min(16, Math.max(0, (atrPct - 0.45) * 40));
+  const confidence = Math.max(15, Math.round(Math.min(93, 24 + Math.abs(score) * 62 + align * 5) - volPenalty));
+  if (volPenalty >= 10) {
+    warnings.push({ tone: "warn", text: `Volatilidad elevada (ATR ${atrPct.toFixed(2)}%/h): confianza reducida, las barridas son más violentas e impredecibles` });
+  }
 
   const shorts = inp.clusters.filter((c) => c.side === "short");
   const longs = inp.clusters.filter((c) => c.side === "long");
   const target = direction === "up" ? shorts[0] ?? null : direction === "down" ? longs[0] ?? null : null;
   const invalidation = direction === "up" ? longs[0] ?? null : direction === "down" ? shorts[0] ?? null : null;
+
+  // cascadas: clusters dentro de 1 ATR del spot → un sweep puede encadenarse
+  const cascade =
+    atrPct > 0
+      ? inp.clusters.filter((c) => c.distancePct <= atrPct).sort((a, b) => a.distancePct - b.distancePct)
+      : [];
+  if (cascade.length >= 2) {
+    warnings.push({
+      tone: "danger",
+      text: `Zona de cascada: ${cascade.length} clusters a menos de 1 ATR — barrer el primero puede liquidar los siguientes en cadena`,
+    });
+  } else if (cascade.length === 1) {
+    warnings.push({
+      tone: "warn",
+      text: `Cluster ${cascade[0].tag} a ${cascade[0].distancePct.toFixed(2)}% del spot (menos de 1 ATR): zona de barrida inmediata`,
+    });
+  }
 
   let windowH: [number, number] = [2, 12];
   if (target && inp.atr1h > 0) {
@@ -296,7 +411,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   }
 
   let headline = "RANGO · SIN SESGO";
-  let sub = "La liquidez está equilibrada a ambos lados. Sin combustible claro para un sweep: espera a que el funding o los pools se desequilibren.";
+  let sub = "La liquidez está equilibrada a ambos lados. Sin combustible claro para un sweep: espera a que el funding, el CVD o los pools se desequilibren.";
   if (direction === "up") {
     headline = "SHORT SQUEEZE";
     sub = target
@@ -309,7 +424,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
       : "Presión bajista dominante, aunque sin un cluster grande cercano definido.";
   }
 
-  return { direction, headline, sub, scorePct, confidence, target, invalidation, windowH, factors };
+  return { direction, headline, sub, scorePct, confidence, target, invalidation, windowH, factors, cascade, warnings };
 }
 
 /* ------------------------------------------------------------
@@ -319,10 +434,12 @@ export const fmtUsd = (v: number, digits = 0) =>
   "$" + v.toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits });
 
 export const fmtCompact = (v: number) => {
-  if (v >= 1e9) return "$" + (v / 1e9).toFixed(2) + "B";
-  if (v >= 1e6) return "$" + (v / 1e6).toFixed(1) + "M";
-  if (v >= 1e3) return "$" + (v / 1e3).toFixed(1) + "K";
-  return "$" + v.toFixed(0);
+  const sign = v < 0 ? "-" : "";
+  const a = Math.abs(v);
+  if (a >= 1e9) return sign + "$" + (a / 1e9).toFixed(2) + "B";
+  if (a >= 1e6) return sign + "$" + (a / 1e6).toFixed(1) + "M";
+  if (a >= 1e3) return sign + "$" + (a / 1e3).toFixed(1) + "K";
+  return sign + "$" + a.toFixed(0);
 };
 
 export const fmtTime = (ms: number) =>

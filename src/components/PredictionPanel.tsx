@@ -85,6 +85,30 @@ export function PredictionPanel({ v, updatedAt }: { v: Verdict; updatedAt: numbe
         </div>
       </div>
 
+      {/* alertas del modelo */}
+      {v.warnings.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {v.warnings.map((w, i) => (
+            <div
+              key={i}
+              className="feed-in flex items-start gap-2 rounded-md border px-3 py-2 text-[11.5px] leading-snug"
+              style={
+                w.tone === "danger"
+                  ? { borderColor: "rgba(255,77,109,0.4)", background: "rgba(255,77,109,0.07)", color: "#ff9fae" }
+                  : { borderColor: "rgba(255,181,71,0.4)", background: "rgba(255,181,71,0.06)", color: "#ffce87" }
+              }
+            >
+              <svg width="13" height="13" viewBox="0 0 18 18" fill="none" aria-hidden className="mt-[2px] shrink-0">
+                <path d="M9 1.8 17 15.4H1L9 1.8Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+                <path d="M9 7v3.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                <circle cx="9" cy="13" r="0.9" fill="currentColor" />
+              </svg>
+              {w.text}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* niveles clave */}
       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
         <div className="rounded-md border border-line/70 bg-ink-950/50 px-3.5 py-3">

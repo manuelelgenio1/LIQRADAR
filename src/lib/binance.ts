@@ -28,6 +28,7 @@ export async function fetchKlines(interval: string, limit: number): Promise<Cand
     low: Number(k[3]),
     close: Number(k[4]),
     quoteVolume: Number(k[7]),
+    takerBuyQuote: Number(k[10]),
   }));
 }
 
@@ -157,13 +158,16 @@ export function simKlines(spot: number, count: number, intervalMs: number): Cand
     const open = i === 0 ? close * (1 + gauss() * sigma * 0.5) : closes[i - 1];
     const hi = Math.max(open, close) * (1 + Math.abs(gauss()) * sigma * 0.6);
     const lo = Math.min(open, close) * (1 - Math.abs(gauss()) * sigma * 0.6);
+    const quoteVolume = 8e6 * Math.pow(10, rnd() * 1.7) * (1 + Math.abs(hi - lo) / open / sigma / 3);
+    const buyShare = 0.5 + (close >= open ? 0.09 : -0.09) + (rnd() - 0.5) * 0.12;
     return {
       time: Math.floor((now - (count - 1 - i) * intervalMs) / 1000),
       open,
       high: hi,
       low: lo,
       close,
-      quoteVolume: 8e6 * Math.pow(10, rnd() * 1.7) * (1 + Math.abs(hi - lo) / open / sigma / 3),
+      quoteVolume,
+      takerBuyQuote: quoteVolume * buyShare,
     };
   });
 }

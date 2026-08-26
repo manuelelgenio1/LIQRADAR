@@ -1,13 +1,22 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMarket, TF_CONFIG, type Timeframe } from "./hooks/useMarket";
 import { useReveal } from "./hooks/useReveal";
-import { estimateLiquidationMap, computeVerdict, atrOf } from "./lib/engine";
+import { estimateLiquidationMap, computeVerdict, atrOf, computeCvd } from "./lib/engine";
+import {
+  evaluatePredictions,
+  loadPredictions,
+  savePredictions,
+  shouldRecord,
+  toPrediction,
+  type Prediction,
+} from "./lib/history";
 import { TopBar } from "./components/TopBar";
 import { PriceChart } from "./components/PriceChart";
 import { LiquidationMap } from "./components/LiquidationMap";
 import { PredictionPanel } from "./components/PredictionPanel";
 import { FeedPanel } from "./components/FeedPanel";
 import { AccumulationPanel } from "./components/AccumulationPanel";
+import { TrackRecord } from "./components/TrackRecord";
 
 const STEPS = [
   {
@@ -30,6 +39,11 @@ const STEPS = [
     title: "Invalida sin piedad",
     body: "Cada veredicto tiene un nivel de invalidación (el gran cluster contrario). Si el precio lo barre con volumen, el escenario muere y el sesgo se voltea: recalcular, no insistir.",
   },
+  {
+    n: "05",
+    title: "Audita al propio radar",
+    body: "El panel de historial registra cada veredicto y lo verifica contra el precio real. Si la tasa de acierto cae en el timeframe que usas, cambia de ventana o exige más factores alineados antes de actuar.",
+  },
 ];
 
 export default function App() {
@@ -43,11 +57,15 @@ export default function App() {
   const analysis = useMemo(() => {
     if (market.candles.length === 0) return null;
     const cfg = TF_CONFIG[tf];
+    const cvd = computeCvd(market.candles);
+    const oiUsdt = market.oi > 0 ? market.oi * roundedSpot : 0;
     const { bins, longPool, shortPool, clusters } = estimateLiquidationMap(
       market.candles,
       roundedSpot,
       levs,
-      cfg.range
+      cfg.range,
+      58,
+      oiUsdt
     );
     const atrPerHour = atrOf(market.candles) * (3600_000 / cfg.ms);
     const verdict = computeVerdict({
@@ -63,9 +81,40 @@ export default function App() {
       atr1h: atrPerHour,
       liveLongLiq: market.sessionLong,
       liveShortLiq: market.sessionShort,
+      cvdPct: cvd.cvdPct,
+      cvdDiv: cvd.divergence,
+      oiUsdt,
     });
-    return { bins, longPool, shortPool, clusters, verdict, updatedAt: Date.now() };
-  }, [market.candles, market.fundingRate, market.globalRatio, market.topRatio, market.oiChange24h, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs]);
+    return { bins, longPool, shortPool, clusters, cvd, verdict, updatedAt: Date.now() };
+  }, [market.candles, market.oi, market.fundingRate, market.globalRatio, market.topRatio, market.oiChange24h, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs]);
+
+  /* ---------- track record del modelo ---------- */
+  const [preds, setPreds] = useState<Prediction[]>(() => loadPredictions());
+  const predsRef = useRef(preds);
+  predsRef.current = preds;
+  const lastPredRef = useRef<Prediction | null>(preds[0] ?? null);
+
+  // registra cada veredicto con sesgo (con deduplicación por escenario)
+  useEffect(() => {
+    if (!analysis) return;
+    const now = Date.now();
+    if (shouldRecord(analysis.verdict, roundedSpot, lastPredRef.current, now)) {
+      const p = toPrediction(analysis.verdict, roundedSpot, now);
+      lastPredRef.current = p;
+      const next = [p, ...predsRef.current].slice(0, 40);
+      savePredictions(next);
+      setPreds(next);
+    }
+  }, [analysis, roundedSpot]);
+
+  // evalúa las predicciones abiertas contra el precio en vivo
+  useEffect(() => {
+    const { list, changed } = evaluatePredictions(preds, roundedSpot, Date.now());
+    if (changed) {
+      savePredictions(list);
+      setPreds(list);
+    }
+  }, [preds, roundedSpot]);
 
   const r1 = useReveal();
   const r2 = useReveal();
@@ -147,22 +196,30 @@ export default function App() {
             </div>
           </div>
 
-          {/* acumulación */}
-          <section className="panel reveal mt-5" ref={r3}>
-            {analysis && (
-              <AccumulationPanel
-                v={analysis.verdict}
-                longPool={analysis.longPool}
-                shortPool={analysis.shortPool}
-                fundingRate={market.fundingRate}
-                globalRatio={market.globalRatio}
-                topRatio={market.topRatio}
-                oi={market.oi}
-                oiChange24h={market.oiChange24h}
-                change24h={market.change24h}
-              />
-            )}
-          </section>
+          {/* acumulación + track record */}
+          <div className="reveal mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_1fr]" ref={r3}>
+            <section className="panel">
+              {analysis && (
+                <AccumulationPanel
+                  v={analysis.verdict}
+                  longPool={analysis.longPool}
+                  shortPool={analysis.shortPool}
+                  fundingRate={market.fundingRate}
+                  globalRatio={market.globalRatio}
+                  topRatio={market.topRatio}
+                  oi={market.oi}
+                  oiChange24h={market.oiChange24h}
+                  change24h={market.change24h}
+                  cvdPct={analysis.cvd.cvdPct}
+                  cvdNet={analysis.cvd.cvdNet}
+                  cvdSeries={analysis.cvd.series}
+                />
+              )}
+            </section>
+            <section className="panel">
+              <TrackRecord preds={preds} spot={market.spot} />
+            </section>
+          </div>
 
           {/* método + disclaimer */}
           <section className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[1.35fr_1fr]">

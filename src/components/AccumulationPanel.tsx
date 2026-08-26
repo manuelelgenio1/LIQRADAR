@@ -1,6 +1,26 @@
 import type { Verdict } from "../lib/engine";
 import { fmtCompact } from "../lib/engine";
 
+function CvdSpark({ series, positive }: { series: number[]; positive: boolean }) {
+  if (series.length < 2) return <div className="mt-2 h-9" />;
+  const min = Math.min(...series);
+  const max = Math.max(...series);
+  const span = max - min || 1;
+  const W = 220;
+  const H = 34;
+  const pts = series
+    .map((v, i) => `${((i / (series.length - 1)) * W).toFixed(1)},${(H - 3 - ((v - min) / span) * (H - 6)).toFixed(1)}`)
+    .join(" ");
+  const color = positive ? "#2fd6a5" : "#ff4d6d";
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 h-9 w-full" preserveAspectRatio="none" aria-hidden>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
+      <polygon points={`0,${H} ${pts} ${W},${H}`} fill={color} opacity="0.09" />
+      <line x1="0" y1={H - 3 - ((0 - min) / span) * (H - 6)} x2={W} y2={H - 3 - ((0 - min) / span) * (H - 6)} stroke="#2b426e" strokeWidth="0.8" strokeDasharray="3 3" />
+    </svg>
+  );
+}
+
 interface Props {
   v: Verdict;
   longPool: number;
@@ -11,6 +31,9 @@ interface Props {
   oi: number;
   oiChange24h: number;
   change24h: number;
+  cvdPct: number;
+  cvdNet: number;
+  cvdSeries: number[];
 }
 
 function DualBar({ left, right, leftLabel, rightLabel }: { left: number; right: number; leftLabel: string; rightLabel: string }) {
@@ -69,7 +92,7 @@ export function AccumulationPanel(p: Props) {
 
       <p className="mt-3 max-w-3xl text-[13.5px] leading-relaxed text-mist">{readout}</p>
 
-      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {/* funding */}
         <div className="rounded-lg border border-line/70 bg-ink-950/50 p-4 transition-transform duration-200 hover:-translate-y-0.5">
           <div className="flex items-center justify-between">
@@ -144,6 +167,25 @@ export function AccumulationPanel(p: Props) {
               : p.oiChange24h < -1
                 ? "Desapalancamiento: el movimiento ya se descargó en parte."
                 : "Apalancamiento estable, sin carga extra de combustible."}
+          </p>
+        </div>
+
+        {/* CVD */}
+        <div className="rounded-lg border border-line/70 bg-ink-950/50 p-4 transition-transform duration-200 hover:-translate-y-0.5">
+          <span className="panel-tag">delta de takers (CVD)</span>
+          <div className={`mt-2 font-mono text-xl font-700 tabular-nums ${p.cvdPct >= 0 ? "text-long" : "text-short"}`}>
+            {p.cvdPct >= 0 ? "+" : ""}
+            {(p.cvdPct * 100).toFixed(1)}%
+            <span className="ml-2 text-[11px] font-500 text-dusk">del volumen</span>
+          </div>
+          <div className="mt-1 font-mono text-[10.5px] tabular-nums text-dusk">{fmtCompact(p.cvdNet)} USDT netos</div>
+          <CvdSpark series={p.cvdSeries} positive={p.cvdPct >= 0} />
+          <p className="mt-1.5 text-[11px] leading-snug text-dusk">
+            {p.cvdPct > 0.02
+              ? "Compra agresiva dominante: se apilan longs a mercado."
+              : p.cvdPct < -0.02
+                ? "Venta agresiva dominante: se apilan shorts a mercado."
+                : "Flujo comprador/vendedor equilibrado en la ventana."}
           </p>
         </div>
       </div>

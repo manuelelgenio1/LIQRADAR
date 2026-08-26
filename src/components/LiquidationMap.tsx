@@ -189,7 +189,7 @@ export function LiquidationMap({ bins, clusters, spot, longPool, shortPool, tf, 
         <span className="flex items-center gap-1.5">
           <i className="h-2 w-2 rounded-full bg-long" /> encima del precio → liquidación de SHORTS (combustible alcista)
         </span>
-        <span className="ml-auto">estimado a partir de volumen, mechas y apalancamiento típico</span>
+        <span className="ml-auto">liquidación = entrada ± (1/L − 0.40% MMR tier 1) · ponderado por volumen y mechas</span>
       </div>
     </div>
   );
