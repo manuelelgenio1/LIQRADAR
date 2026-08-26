@@ -101,7 +101,7 @@ export function TopBar({ m }: { m: MarketData }) {
       <div className="overflow-hidden border-t border-line/60 bg-ink-950/60 py-1.5">
         <div className="tape-track font-mono text-[11px] tracking-wide text-mist">
           {[0, 1].map((dup) => (
-            <div key={dup} className="flex shrink-0 items-center gap-11">
+            <div key={dup} className="flex shrink-0 items-center gap-11 pr-11">
               <span>◆ MÁX 24H <b className="text-fog">{m.high24h ? fmtUsd(m.high24h) : "—"}</b></span>
               <span>◆ MÍN 24H <b className="text-fog">{m.low24h ? fmtUsd(m.low24h) : "—"}</b></span>
               <span>◆ VOL 24H <b className="text-fog">{m.quoteVolume24h ? "$" + (m.quoteVolume24h / 1e9).toFixed(2) + "B" : "—"}</b></span>

@@ -139,11 +139,15 @@ body {
   background: rgba(47, 214, 165, 0.09);
   box-shadow: 0 0 18px -6px rgba(47, 214, 165, 0.45);
 }
+.chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
 
 /* ---------- ticker tape ---------- */
 .tape-track {
   display: flex;
-  gap: 44px;
   width: max-content;
   animation: tape 42s linear infinite;
 }
@@ -217,3 +221,20 @@ body {
 .slim-scroll::-webkit-scrollbar-thumb:hover { background: #2a4069; }
 
 ::selection { background: rgba(47, 214, 165, 0.3); }
+
+/* ---------- accesibilidad: menos movimiento ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .scanline,
+  .tape-track,
+  .live-dot,
+  .verdict-pulse,
+  .heat-bar,
+  .feed-in {
+    animation: none !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
