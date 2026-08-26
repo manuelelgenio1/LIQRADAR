@@ -89,7 +89,7 @@ export function PriceChart({ candles, clusters, spot }: Props) {
     clusters.slice(0, 5).forEach((c) => {
       const line = series.createPriceLine({
         price: c.price,
-        color: c.side === "long" ? "rgba(255,77,109,0.85)" : "rgba(47,214,165,0.85)",
+        color: c.side === "long" ? "rgba(47,214,165,0.85)" : "rgba(255,77,109,0.85)",
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,

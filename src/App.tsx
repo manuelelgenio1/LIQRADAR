@@ -24,7 +24,7 @@ const STEPS = [
   {
     n: "01",
     title: "Lee los pools, no el precio",
-    body: "Las barras rosas bajo el spot son liquidaciones de longs; las verdes arriba, de shorts. Cuanto más grueso el cluster, más fuerte el imán: el mercado suele viajar a barrerlos antes de girar.",
+    body: "Las barras verdes bajo el spot son liquidaciones de longs; las rojas arriba, de shorts. Cuanto más grueso el cluster, más fuerte el imán: el mercado suele viajar a barrerlos antes de girar.",
   },
   {
     n: "02",
@@ -175,8 +175,8 @@ export default function App() {
                   </div>
                   <div className="flex flex-wrap gap-x-5 gap-y-1 font-mono text-[10.5px] tabular-nums text-dusk">
                     <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-warn" />precio spot</span>
-                    <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-long" />liq. shorts (objetivo alcista)</span>
-                    <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-short" />liq. longs (objetivo bajista)</span>
+                    <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-short" />liq. shorts (objetivo alcista)</span>
+                    <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-long" />liq. longs (objetivo bajista)</span>
                   </div>
                 </div>
                 {market.candles.length > 0 ? (

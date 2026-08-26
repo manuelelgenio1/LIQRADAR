@@ -56,8 +56,8 @@ export function LiquidationMap({ bins, clusters, spot, longPool, shortPool, tf, 
           </h2>
           <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-mist">
             Cada barra es un nivel de precio donde se concentran liquidaciones estimadas.{" "}
-            <span className="text-short-hi">Rosa = longs liquidados (abajo)</span> ·{" "}
-            <span className="text-long-hi">Verde = shorts liquidados (arriba)</span>. El precio suele barrer estas zonas.
+            <span className="text-long-hi">Verde = liquidación de LONGS (abajo)</span> ·{" "}
+            <span className="text-short-hi">Rojo = liquidación de SHORTS (arriba)</span>. El precio suele barrer estas zonas.
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -82,21 +82,21 @@ export function LiquidationMap({ bins, clusters, spot, longPool, shortPool, tf, 
       {/* balance de pools */}
       <div>
         <div className="mb-1.5 flex justify-between font-mono text-[11px] tabular-nums">
-          <span className="text-short-hi">
+          <span className="text-long-hi">
             LIQ. LONGS ABAJO · {fmtCompact(longPool)} ({longPct.toFixed(0)}%)
           </span>
-          <span className="text-long-hi">
+          <span className="text-short-hi">
             ({(100 - longPct).toFixed(0)}%) {fmtCompact(shortPool)} · LIQ. SHORTS ARRIBA
           </span>
         </div>
         <div className="flex h-2.5 overflow-hidden rounded-sm border border-line/60">
           <div
             className="h-full transition-all duration-700"
-            style={{ width: `${longPct}%`, background: "linear-gradient(90deg,#8f1f36,#ff4d6d)" }}
+            style={{ width: `${longPct}%`, background: "linear-gradient(90deg,#157a5c,#2fd6a5)" }}
           />
           <div
             className="h-full transition-all duration-700"
-            style={{ width: `${100 - longPct}%`, background: "linear-gradient(90deg,#2fd6a5,#157a5c)" }}
+            style={{ width: `${100 - longPct}%`, background: "linear-gradient(90deg,#8f1f36,#ff4d6d)" }}
           />
         </div>
       </div>
@@ -133,20 +133,20 @@ export function LiquidationMap({ bins, clusters, spot, longPool, shortPool, tf, 
                         width: `${Math.max(b.intensity * 100, b.intensity > 0.02 ? 1.5 : 0)}%`,
                         background:
                           b.side === "long"
-                            ? `linear-gradient(90deg, rgba(255,77,109,${0.25 + b.intensity * 0.75}), rgba(255,77,109,${0.06 + b.intensity * 0.3}))`
-                            : `linear-gradient(90deg, rgba(47,214,165,${0.25 + b.intensity * 0.75}), rgba(47,214,165,${0.06 + b.intensity * 0.3}))`,
+                            ? `linear-gradient(90deg, rgba(47,214,165,${0.25 + b.intensity * 0.75}), rgba(47,214,165,${0.06 + b.intensity * 0.3}))`
+                            : `linear-gradient(90deg, rgba(255,77,109,${0.25 + b.intensity * 0.75}), rgba(255,77,109,${0.06 + b.intensity * 0.3}))`,
                         boxShadow:
                           b.intensity > 0.72
                             ? b.side === "long"
-                              ? "0 0 14px -2px rgba(255,77,109,0.8)"
-                              : "0 0 14px -2px rgba(47,214,165,0.8)"
+                              ? "0 0 14px -2px rgba(47,214,165,0.8)"
+                              : "0 0 14px -2px rgba(255,77,109,0.8)"
                             : "none",
                         animationDelay: `${i * 9}ms`,
                       }}
                     />
                     {hovered && (
                       <div className="pointer-events-none absolute left-1/2 top-[-34px] z-20 -translate-x-1/2 whitespace-nowrap rounded-md border border-line bg-ink-900/95 px-3 py-1.5 font-mono text-[10.5px] tabular-nums shadow-xl">
-                        <span className={b.side === "long" ? "text-short-hi" : "text-long-hi"}>
+                        <span className={b.side === "long" ? "text-long-hi" : "text-short-hi"}>
                           {b.side === "long" ? "LIQ LONGS" : "LIQ SHORTS"}
                         </span>{" "}
                         <span className="text-fog">{fmtUsd(b.price)}</span>{" "}
@@ -157,7 +157,7 @@ export function LiquidationMap({ bins, clusters, spot, longPool, shortPool, tf, 
                   </div>
                   <span className="w-[118px] shrink-0 font-mono text-[9.5px] tabular-nums">
                     {c && (
-                      <span className={c.side === "long" ? "text-short-hi" : "text-long-hi"}>
+                      <span className={c.side === "long" ? "text-long-hi" : "text-short-hi"}>
                         <b>{c.tag}</b> {fmtCompact(c.estNotional)} · {c.distancePct.toFixed(1)}%
                       </span>
                     )}
@@ -184,10 +184,10 @@ export function LiquidationMap({ bins, clusters, spot, longPool, shortPool, tf, 
       {/* leyenda inferior */}
       <div className="flex flex-wrap items-center gap-x-6 gap-y-1 border-t border-line/50 pt-3 font-mono text-[10.5px] text-dusk">
         <span className="flex items-center gap-1.5">
-          <i className="h-2 w-2 rounded-full bg-short" /> debajo del precio → liquidación de LONGS (combustible bajista)
+          <i className="h-2 w-2 rounded-full bg-long" /> debajo del precio → liquidación de LONGS (combustible bajista)
         </span>
         <span className="flex items-center gap-1.5">
-          <i className="h-2 w-2 rounded-full bg-long" /> encima del precio → liquidación de SHORTS (combustible alcista)
+          <i className="h-2 w-2 rounded-full bg-short" /> encima del precio → liquidación de SHORTS (combustible alcista)
         </span>
         <span className="ml-auto">liquidación = entrada ± (1/L − 0.40% MMR tier 1) · ponderado por volumen y mechas</span>
       </div>

@@ -109,8 +109,8 @@ export function TopBar({ m }: { m: MarketData }) {
               <span>◆ OI 24H <b className={m.oiChange24h >= 0 ? "text-long" : "text-short"}>{m.oiChange24h >= 0 ? "+" : ""}{m.oiChange24h.toFixed(1)}%</b></span>
               <span>◆ RATIO RETAIL <b className="text-fog">{m.globalRatio.toFixed(2)}</b></span>
               <span>◆ RATIO TOP <b className="text-fog">{m.topRatio.toFixed(2)}</b></span>
-              <span>◆ LONGS LIQ. SESIÓN <b className="text-short">{fmtUsd(m.sessionLong)}</b></span>
-              <span>◆ SHORTS LIQ. SESIÓN <b className="text-long">{fmtUsd(m.sessionShort)}</b></span>
+              <span>◆ LONGS LIQ. SESIÓN <b className="text-long">{fmtUsd(m.sessionLong)}</b></span>
+              <span>◆ SHORTS LIQ. SESIÓN <b className="text-short">{fmtUsd(m.sessionShort)}</b></span>
               <span className="text-dusk">los pools de liquidez actúan como imanes de precio</span>
             </div>
           ))}
