@@ -1,5 +1,243 @@
+import { useMemo, useState } from "react";
+import { useMarket, TF_CONFIG, type Timeframe } from "./hooks/useMarket";
+import { useReveal } from "./hooks/useReveal";
+import { estimateLiquidationMap, computeVerdict, atrOf } from "./lib/engine";
+import { TopBar } from "./components/TopBar";
+import { PriceChart } from "./components/PriceChart";
+import { LiquidationMap } from "./components/LiquidationMap";
+import { PredictionPanel } from "./components/PredictionPanel";
+import { FeedPanel } from "./components/FeedPanel";
+import { AccumulationPanel } from "./components/AccumulationPanel";
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Lee los pools, no el precio",
+    body: "Las barras rosas bajo el spot son liquidaciones de longs; las verdes arriba, de shorts. Cuanto más grueso el cluster, más fuerte el imán: el mercado suele viajar a barrerlos antes de girar.",
+  },
+  {
+    n: "02",
+    title: "Detecta la multitud",
+    body: "Funding positivo + ratio de cuentas > 1 = todo el mundo en long. Esa multitud solo gana si el precio no cae: su combustible está apilado justo debajo, listo para ser cazado.",
+  },
+  {
+    n: "03",
+    title: "Espera el sweep",
+    body: "Cuando el precio atraviesa un cluster y la cinta de liquidaciones se enciende, el movimiento suele agotarse ahí: la liquidez ya fue tomada y los liquidados son la contrapartida del giro.",
+  },
+  {
+    n: "04",
+    title: "Invalida sin piedad",
+    body: "Cada veredicto tiene un nivel de invalidación (el gran cluster contrario). Si el precio lo barre con volumen, el escenario muere y el sesgo se voltea: recalcular, no insistir.",
+  },
+];
+
 export default function App() {
+  const [tf, setTf] = useState<Timeframe>("72h");
+  const [levs, setLevs] = useState<number[]>([10, 25, 50, 100]);
+  const market = useMarket(tf);
+
+  // redondeo del spot para no recalcular el mapa en cada tick
+  const roundedSpot = useMemo(() => Math.round(market.spot / 8) * 8, [market.spot]);
+
+  const analysis = useMemo(() => {
+    if (market.candles.length === 0) return null;
+    const cfg = TF_CONFIG[tf];
+    const { bins, longPool, shortPool, clusters } = estimateLiquidationMap(
+      market.candles,
+      roundedSpot,
+      levs,
+      cfg.range
+    );
+    const atrPerHour = atrOf(market.candles) * (3600_000 / cfg.ms);
+    const verdict = computeVerdict({
+      spot: roundedSpot,
+      longPool,
+      shortPool,
+      clusters,
+      fundingRate: market.fundingRate,
+      globalRatio: market.globalRatio,
+      topRatio: market.topRatio,
+      oiChange24h: market.oiChange24h,
+      priceChange24h: market.change24h,
+      atr1h: atrPerHour,
+      liveLongLiq: market.sessionLong,
+      liveShortLiq: market.sessionShort,
+    });
+    return { bins, longPool, shortPool, clusters, verdict, updatedAt: Date.now() };
+  }, [market.candles, market.fundingRate, market.globalRatio, market.topRatio, market.oiChange24h, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs]);
+
+  const r1 = useReveal();
+  const r2 = useReveal();
+  const r3 = useReveal();
+
   return (
-    <div/>
+    <div className="relative min-h-screen font-body">
+      <div className="ambient" />
+      <div className="scanline" />
+
+      <div className="relative z-10">
+        <TopBar m={market} />
+
+        <main className="mx-auto max-w-[1500px] px-5 pb-16 pt-6">
+          {/* fila principal */}
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_400px]">
+            {/* columna izquierda */}
+            <div className="order-2 flex flex-col gap-5 lg:order-1">
+              <section className="panel p-5">
+                <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                  <div>
+                    <div className="panel-tag">00 · contexto</div>
+                    <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
+                      BTC/USDT · velas {TF_CONFIG[tf].label}
+                    </h2>
+                  </div>
+                  <div className="flex flex-wrap gap-x-5 gap-y-1 font-mono text-[10.5px] tabular-nums text-dusk">
+                    <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-warn" />precio spot</span>
+                    <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-long" />liq. shorts (objetivo alcista)</span>
+                    <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-short" />liq. longs (objetivo bajista)</span>
+                  </div>
+                </div>
+                {market.candles.length > 0 ? (
+                  <PriceChart candles={market.candles} clusters={analysis?.clusters ?? []} spot={market.spot} />
+                ) : (
+                  <div className="flex h-[340px] animate-pulse items-center justify-center rounded-md border border-line/50 font-mono text-xs text-dusk sm:h-[400px]">
+                    CARGANDO VELAS…
+                  </div>
+                )}
+              </section>
+
+              <section className="panel reveal" ref={r1}>
+                {analysis && (
+                  <LiquidationMap
+                    bins={analysis.bins}
+                    clusters={analysis.clusters}
+                    spot={market.spot}
+                    longPool={analysis.longPool}
+                    shortPool={analysis.shortPool}
+                    tf={tf}
+                    onTf={setTf}
+                    levs={levs}
+                    onLevs={setLevs}
+                  />
+                )}
+              </section>
+            </div>
+
+            {/* columna derecha */}
+            <div className="order-1 flex flex-col gap-5 lg:order-2">
+              <section className="panel">
+                {analysis ? (
+                  <PredictionPanel v={analysis.verdict} updatedAt={analysis.updatedAt} />
+                ) : (
+                  <div className="flex h-64 animate-pulse items-center justify-center font-mono text-xs text-dusk">
+                    CALIBRANDO MOTOR…
+                  </div>
+                )}
+              </section>
+
+              <section className="panel reveal" ref={r2}>
+                <FeedPanel
+                  events={market.liqEvents}
+                  sessionLong={market.sessionLong}
+                  sessionShort={market.sessionShort}
+                  live={market.sources.liq === "live"}
+                />
+              </section>
+            </div>
+          </div>
+
+          {/* acumulación */}
+          <section className="panel reveal mt-5" ref={r3}>
+            {analysis && (
+              <AccumulationPanel
+                v={analysis.verdict}
+                longPool={analysis.longPool}
+                shortPool={analysis.shortPool}
+                fundingRate={market.fundingRate}
+                globalRatio={market.globalRatio}
+                topRatio={market.topRatio}
+                oi={market.oi}
+                oiChange24h={market.oiChange24h}
+                change24h={market.change24h}
+              />
+            )}
+          </section>
+
+          {/* método + disclaimer */}
+          <section className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[1.35fr_1fr]">
+            <div>
+              <div className="panel-tag">manual de campo</div>
+              <h2 className="font-display mt-2 max-w-md text-2xl font-900 leading-tight tracking-tight text-fog sm:text-3xl">
+                Cómo leer el radar como un liquidador
+              </h2>
+              <div className="mt-6 flex flex-col">
+                {STEPS.map((s, i) => (
+                  <div
+                    key={s.n}
+                    className={`group flex gap-5 py-5 ${i < STEPS.length - 1 ? "border-b border-line/50" : ""}`}
+                  >
+                    <span className="font-display text-3xl font-900 leading-none text-line transition-colors duration-300 group-hover:text-long sm:text-4xl">
+                      {s.n}
+                    </span>
+                    <div>
+                      <h3 className="text-[15px] font-700 text-fog transition-colors duration-300 group-hover:text-long-hi">
+                        {s.title}
+                      </h3>
+                      <p className="mt-1.5 max-w-xl text-[13px] leading-relaxed text-mist">{s.body}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div className="rounded-lg border border-warn/25 bg-warn/[0.04] p-5">
+                <div className="flex items-center gap-2">
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
+                    <path d="M9 1.8 17 15.4H1L9 1.8Z" stroke="#ffb547" strokeWidth="1.5" strokeLinejoin="round" />
+                    <path d="M9 7v3.6" stroke="#ffb547" strokeWidth="1.5" strokeLinecap="round" />
+                    <circle cx="9" cy="13" r="0.9" fill="#ffb547" />
+                  </svg>
+                  <span className="font-mono text-[11px] font-700 tracking-widest text-warn">AVISO IMPORTANTE</span>
+                </div>
+                <p className="mt-2.5 text-[12.5px] leading-relaxed text-mist">
+                  LiqRadar es una herramienta <b className="text-fog">estadística y educativa</b>. Los niveles de
+                  liquidación son <b className="text-fog">estimaciones</b> construidas con velas, volumen y
+                  apalancamiento típico — no datos del libro de órdenes. El veredicto es una probabilidad ponderada,
+                  jamás una certeza, y <b className="text-fog">no constituye asesoría financiera</b>. Opera con gestión
+                  de riesgo o no operes.
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-line/70 bg-ink-950/50 p-5">
+                <div className="panel-tag">fuentes de datos</div>
+                <ul className="mt-2.5 space-y-2 font-mono text-[11px] leading-relaxed text-mist">
+                  <li><span className="text-long">▸</span> Binance Spot — velas y precio en vivo (WebSocket)</li>
+                  <li><span className="text-long">▸</span> Binance USDⓈ-M — funding, interés abierto, ratios L/S</li>
+                  <li><span className="text-long">▸</span> Binance Futuros — stream <span className="text-fog">!forceOrder</span> de liquidaciones</li>
+                  <li><span className="text-warn">▸</span> Sin conexión: simulador coherente para seguir practicando</li>
+                </ul>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border border-line/70 bg-ink-950/50 px-5 py-3.5 font-mono text-[10.5px] text-dusk">
+                <span>próxima sincronización</span>
+                <span className="tabular-nums text-fog">{market.refreshIn}s</span>
+              </div>
+            </div>
+          </section>
+        </main>
+
+        <footer className="border-t border-line/60 bg-ink-900/60">
+          <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3 px-5 py-5 font-mono text-[10.5px] text-dusk">
+            <span>
+              <b className="text-mist">LIQRADAR</b> · radar de liquidaciones BTC · los imanes de liquidez no predicen el
+              futuro, solo muestran dónde duele
+            </span>
+            <span>datos: Binance · estimación propia · {new Date().getFullYear()}</span>
+          </div>
+        </footer>
+      </div>
+    </div>
   );
 }
