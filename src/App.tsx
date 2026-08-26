@@ -17,6 +17,8 @@ import { PredictionPanel } from "./components/PredictionPanel";
 import { FeedPanel } from "./components/FeedPanel";
 import { AccumulationPanel } from "./components/AccumulationPanel";
 import { TrackRecord } from "./components/TrackRecord";
+import { RumboGauge } from "./components/RumboGauge";
+import { BacktestLab } from "./components/BacktestLab";
 
 const STEPS = [
   {
@@ -59,34 +61,51 @@ export default function App() {
     const cfg = TF_CONFIG[tf];
     const cvd = computeCvd(market.candles);
     const oiUsdt = market.oi > 0 ? market.oi * roundedSpot : 0;
-    const { bins, longPool, shortPool, clusters } = estimateLiquidationMap(
+    const { bins, longPool, shortPool, nearLongPool, nearShortPool, clusters } = estimateLiquidationMap(
       market.candles,
       roundedSpot,
       levs,
       cfg.range,
       58,
-      oiUsdt
+      oiUsdt,
+      2
     );
     const atrPerHour = atrOf(market.candles) * (3600_000 / cfg.ms);
+
+    // pendientes multi-plazo: tercio reciente vs ventana completa
+    const n = market.candles.length;
+    const last = market.candles[n - 1].close;
+    const k = Math.max(2, Math.floor(n / 3));
+    const fastSlopePct = ((last - market.candles[n - 1 - k].close) / market.candles[n - 1 - k].close) * 100;
+    const slowSlopePct = ((last - market.candles[0].close) / market.candles[0].close) * 100;
+
     const verdict = computeVerdict({
       spot: roundedSpot,
       longPool,
       shortPool,
+      nearLongPool,
+      nearShortPool,
       clusters,
       fundingRate: market.fundingRate,
+      fundingTrend: market.fundingTrend,
       globalRatio: market.globalRatio,
       topRatio: market.topRatio,
+      takerRatio: market.takerRatio,
       oiChange24h: market.oiChange24h,
+      oiSlope5m: market.oiSlope5m,
       priceChange24h: market.change24h,
+      premium: market.premium,
       atr1h: atrPerHour,
       liveLongLiq: market.sessionLong,
       liveShortLiq: market.sessionShort,
       cvdPct: cvd.cvdPct,
       cvdDiv: cvd.divergence,
       oiUsdt,
+      fastSlopePct,
+      slowSlopePct,
     });
     return { bins, longPool, shortPool, clusters, cvd, verdict, updatedAt: Date.now() };
-  }, [market.candles, market.oi, market.fundingRate, market.globalRatio, market.topRatio, market.oiChange24h, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs]);
+  }, [market.candles, market.oi, market.fundingRate, market.fundingTrend, market.globalRatio, market.topRatio, market.takerRatio, market.oiChange24h, market.oiSlope5m, market.premium, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs]);
 
   /* ---------- track record del modelo ---------- */
   const [preds, setPreds] = useState<Prediction[]>(() => loadPredictions());
@@ -116,9 +135,11 @@ export default function App() {
     }
   }, [preds, roundedSpot]);
 
+  const r0 = useReveal();
   const r1 = useReveal();
   const r2 = useReveal();
   const r3 = useReveal();
+  const r4 = useReveal();
 
   return (
     <div className="relative min-h-screen font-body">
@@ -129,6 +150,17 @@ export default function App() {
         <TopBar m={market} />
 
         <main className="mx-auto max-w-[1500px] px-5 pb-16 pt-6">
+          {/* rumbo: ¿LONG o SHORT? */}
+          <section className="reveal mb-5" ref={r0}>
+            {analysis ? (
+              <RumboGauge v={analysis.verdict} />
+            ) : (
+              <div className="panel flex h-40 animate-pulse items-center justify-center font-mono text-xs text-dusk">
+                FIJANDO RUMBO…
+              </div>
+            )}
+          </section>
+
           {/* fila principal */}
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_400px]">
             {/* columna izquierda */}
@@ -220,6 +252,11 @@ export default function App() {
               <TrackRecord preds={preds} spot={market.spot} />
             </section>
           </div>
+
+          {/* laboratorio de validación */}
+          <section className="panel reveal mt-5" ref={r4}>
+            <BacktestLab spot={market.spot} />
+          </section>
 
           {/* método + disclaimer */}
           <section className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-[1.35fr_1fr]">

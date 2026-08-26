@@ -191,8 +191,7 @@ export async function runWalkForward(
   const expired = tests.filter((t) => t.outcome === "caducada").length;
   const closed = hits + misses;
 
-  const bucket = (list: BtTest[]): BtBucket => ({
-    label: "",
+  const bucket = (list: BtTest[]): { hits: number; closed: number } => ({
     hits: list.filter((t) => t.outcome === "acierto").length,
     closed: list.filter((t) => t.outcome !== "caducada").length,
   });

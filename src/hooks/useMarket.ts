@@ -3,9 +3,12 @@ import type { Candle, LiqEvent } from "../lib/engine";
 import {
   connectWs,
   fetchFunding,
+  fetchFundingHistory,
   fetchKlines,
+  fetchOI5mSlope,
   fetchOpenInterest,
   fetchRatios,
+  fetchTakerRatio,
   fetchTicker24h,
   simKlines,
   simLiqEvent,
@@ -30,11 +33,16 @@ export interface MarketData {
   low24h: number;
   quoteVolume24h: number;
   fundingRate: number;
+  fundingTrend: number;
   nextFundingTime: number;
   oi: number;
   oiChange24h: number;
+  oiSlope5m: number;
   globalRatio: number;
   topRatio: number;
+  takerRatio: number;
+  takerTrend: number;
+  premium: number;
   candles: Candle[];
   liqEvents: LiqEvent[];
   sessionLong: number;
@@ -51,9 +59,10 @@ export function useMarket(tf: Timeframe): MarketData {
   const [dir, setDir] = useState<1 | -1 | 0>(0);
   const [tickId, setTickId] = useState(0);
   const [ticker, setTicker] = useState({ change: 0, high: 0, low: 0, vol: 0 });
-  const [funding, setFunding] = useState({ rate: 0.0001, next: 0 });
-  const [oi, setOi] = useState({ oi: 0, change: 0 });
+  const [funding, setFunding] = useState({ rate: 0.0001, next: 0, trend: 0, premium: 0 });
+  const [oi, setOi] = useState({ oi: 0, change: 0, slope5m: 0 });
   const [ratios, setRatios] = useState({ global: 1.05, top: 0.97 });
+  const [taker, setTaker] = useState({ ratio: 1, trend: 0 });
   const [candles, setCandles] = useState<Candle[]>([]);
   const [liqEvents, setLiqEvents] = useState<LiqEvent[]>([]);
   const [session, setSession] = useState({ long: 0, short: 0 });
@@ -104,20 +113,31 @@ export function useMarket(tf: Timeframe): MarketData {
       }
       try {
         const f = await fetchFunding();
-        if (alive) setFunding({ rate: f.rate, next: f.nextTime });
+        const hist = await fetchFundingHistory();
+        const trend = hist.length >= 2 ? hist[hist.length - 1] - hist[0] : 0;
+        const premium = f.index > 0 ? (f.mark - f.index) / f.index : 0;
+        if (alive) setFunding({ rate: f.rate, next: f.nextTime, trend, premium });
       } catch {
         ok = false;
-        if (alive) setFunding({ rate: 0.00008 + (Math.random() - 0.4) * 0.0002, next: Date.now() + 4 * 3600_000 });
+        if (alive)
+          setFunding({ rate: 0.00008 + (Math.random() - 0.4) * 0.0002, next: Date.now() + 4 * 3600_000, trend: 0, premium: 0 });
       }
       try {
         const o = await fetchOpenInterest();
-        if (alive) setOi({ oi: o.oi, change: o.change24hPct });
+        const slope = await fetchOI5mSlope();
+        if (alive) setOi({ oi: o.oi, change: o.change24hPct, slope5m: slope });
       } catch {
         ok = false;
       }
       try {
         const r = await fetchRatios();
         if (alive) setRatios(r);
+      } catch {
+        ok = false;
+      }
+      try {
+        const tk = await fetchTakerRatio();
+        if (alive) setTaker({ ratio: tk.ratio, trend: tk.trend });
       } catch {
         ok = false;
       }
@@ -239,11 +259,16 @@ export function useMarket(tf: Timeframe): MarketData {
     low24h: ticker.low,
     quoteVolume24h: ticker.vol,
     fundingRate: funding.rate,
+    fundingTrend: funding.trend,
     nextFundingTime: funding.next,
     oi: oi.oi,
     oiChange24h: oi.change,
+    oiSlope5m: oi.slope5m,
     globalRatio: ratios.global,
     topRatio: ratios.top,
+    takerRatio: taker.ratio,
+    takerTrend: taker.trend,
+    premium: funding.premium,
     candles,
     liqEvents,
     sessionLong: session.long,
