@@ -20,6 +20,7 @@ import { TrackRecord } from "./components/TrackRecord";
 import { BacktestLab } from "./components/BacktestLab";
 import { RumboGauge } from "./components/RumboGauge";
 import { LiqHeatmap } from "./components/LiqHeatmap";
+import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 
 const STEPS = [
   {
@@ -142,6 +143,7 @@ export default function App() {
   const r3 = useReveal();
   const r4 = useReveal();
   const r5 = useReveal();
+  const r6 = useReveal();
 
   return (
     <div className="relative min-h-screen font-body">
@@ -275,6 +277,16 @@ export default function App() {
           {/* laboratorio de validación */}
           <section className="panel reveal mt-5" ref={r5}>
             <BacktestLab spot={market.spot} />
+          </section>
+
+          {/* diagnóstico en vivo */}
+          <section className="panel reveal mt-5" ref={r6}>
+            <DiagnosticsPanel
+              m={market}
+              a={analysis}
+              rangePct={TF_CONFIG[tf].range}
+              preds={preds}
+            />
           </section>
 
           {/* método + disclaimer */}
