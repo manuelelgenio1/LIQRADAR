@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMarket, TF_CONFIG, type Timeframe } from "./hooks/useMarket";
 import { useConfluence } from "./hooks/useConfluence";
 import { useReveal } from "./hooks/useReveal";
@@ -35,6 +35,8 @@ import { ConfluencePanel } from "./components/ConfluencePanel";
 import { ExchangeRadarPanel } from "./components/ExchangeRadarPanel";
 import { FundingHeatmap } from "./components/FundingHeatmap";
 import { AgentBridgePanel } from "./components/AgentBridgePanel";
+import { PaperAgentPanel } from "./components/PaperAgentPanel";
+import { usePaperAgent } from "./hooks/usePaperAgent";
 import { SectionGroup } from "./components/SectionGroup";
 import { MiniNav, type ZoneDef } from "./components/MiniNav";
 import { AlertCenter, type SniperCfg, type PriceLevel } from "./components/AlertCenter";
@@ -315,7 +317,7 @@ export default function App() {
   const webhookRef = useRef(webhook);
   webhookRef.current = webhook;
 
-  const sendWebhook = (evento: string, extra: Record<string, unknown>) => {
+  const sendWebhook = useCallback((evento: string, extra: Record<string, unknown>) => {
     const url = webhookRef.current.trim();
     if (!url) return;
     fetch(url, {
@@ -325,7 +327,7 @@ export default function App() {
     }).catch(() => {
       /* webhook inaccesible: no bloquea el radar */
     });
-  };
+  }, []);
 
   const [sniperAlert, setSniperAlert] = useState<SniperInfo | null>(null);
   const [lastFire, setLastFire] = useState<number | null>(null);
@@ -413,6 +415,9 @@ export default function App() {
     if (soundOn) playConfirm();
     sendWebhook("prueba", { mensaje: "LiqRadar conectado: recibirás giros de rumbo, zonas magnéticas y señales francotirador" });
   };
+
+  /* ---------- Agente LiqRadar: paper trading autónomo ---------- */
+  const agent = usePaperAgent(analysis?.verdict ?? null, market.spot, confluence, soundOn, sendWebhook);
 
   // índice de confiabilidad de la señal: confianza del modelo + acierto histórico +
   // frescura de datos + confluencia multi-timeframe (coincidir con el rumbo suma)
