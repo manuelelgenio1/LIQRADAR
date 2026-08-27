@@ -18,7 +18,7 @@ function useCountdownLabel(nextFundingTime: number): string {
   return label;
 }
 
-export function TopBar({ m }: { m: MarketData }) {
+export function TopBar({ m, soundOn, onToggleSound }: { m: MarketData; soundOn: boolean; onToggleSound: () => void }) {
   const up = m.dir >= 0;
   const fundingLabel = useCountdownLabel(m.nextFundingTime);
   const sim = m.sources.klines === "sim" && m.sources.metrics === "sim";
@@ -94,6 +94,28 @@ export function TopBar({ m }: { m: MarketData }) {
               {sim ? "SIMULADO" : partial ? "PARCIAL" : "EN VIVO"}
             </span>
           </div>
+          <button
+            onClick={onToggleSound}
+            className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-[10px] font-700 tracking-widest transition-all ${
+              soundOn
+                ? "border-long/60 bg-long/10 text-long-hi hover:bg-long/20"
+                : "border-line text-dusk hover:border-line/90 hover:text-mist"
+            }`}
+            title={soundOn ? "Alertas sonoras activadas (giros de rumbo y zonas magnéticas)" : "Activar alertas sonoras"}
+          >
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden>
+              <path d="M1.5 5v4h2.4L7 12V2L3.9 5H1.5Z" fill="currentColor" />
+              {soundOn ? (
+                <>
+                  <path d="M9 4.5a3.4 3.4 0 0 1 0 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                  <path d="M10.8 2.8a6 6 0 0 1 0 8.4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+                </>
+              ) : (
+                <path d="M9 5.2l3.6 3.6M12.6 5.2 9 8.8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+              )}
+            </svg>
+            {soundOn ? "SONIDO" : "MUDO"}
+          </button>
         </div>
       </div>
 

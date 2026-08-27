@@ -22,17 +22,50 @@ export function TrackRecord({ preds, spot }: { preds: Prediction[]; spot: number
           <div className="panel-tag">07 · historial del modelo</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog">¿Cuánto acierta el radar?</h2>
         </div>
-        <button
-          className="chip"
-          onClick={() => {
-            try {
-              localStorage.removeItem("liqradar-preds-v2");
-            } catch { /* noop */ }
-            window.location.reload();
-          }}
-        >
-          reiniciar
-        </button>
+        <div className="flex gap-1.5">
+          <button
+            className="chip"
+            onClick={() => {
+              if (preds.length === 0) return;
+              const rows = [
+                "fecha,hora,veredicto,direccion,spot,objetivo,confianza,estado,nota",
+                ...preds.map((p) => {
+                  const d = new Date(p.time);
+                  return [
+                    d.toLocaleDateString("es-ES"),
+                    d.toLocaleTimeString("es-ES"),
+                    p.headline,
+                    p.direction,
+                    p.spot.toFixed(2),
+                    p.target?.toFixed(2) ?? "",
+                    p.confidence,
+                    p.status,
+                    `"${(p.note ?? "").replace(/"/g, "'")}"`,
+                  ].join(",");
+                }),
+              ].join("\n");
+              const blob = new Blob(["\uFEFF" + rows], { type: "text/csv;charset=utf-8" });
+              const a = document.createElement("a");
+              a.href = URL.createObjectURL(blob);
+              a.download = `liqradar-historial-${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(a.href);
+            }}
+          >
+            exportar csv
+          </button>
+          <button
+            className="chip"
+            onClick={() => {
+              try {
+                localStorage.removeItem("liqradar-preds-v2");
+              } catch { /* noop */ }
+              window.location.reload();
+            }}
+          >
+            reiniciar
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-5 rounded-lg border border-line/70 bg-ink-950/50 p-4">

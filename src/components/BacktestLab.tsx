@@ -122,6 +122,39 @@ export function BacktestLab({ spot }: { spot: number }) {
           >
             {phase === "downloading" ? "⬇ DESCARGANDO…" : phase === "running" ? "EJECUTANDO…" : "▶ EJECUTAR PRUEBA"}
           </button>
+          {phase === "done" && result && (
+            <button
+              className="chip"
+              onClick={() => {
+                const rows = [
+                  "fecha,hora,direccion,veredicto,spot,objetivo,invalidacion,confianza,resultado,pnl_pct,horas",
+                  ...result.tests.map((t) =>
+                    [
+                      new Date(t.time * 1000).toLocaleDateString("es-ES"),
+                      new Date(t.time * 1000).toLocaleTimeString("es-ES"),
+                      t.dir,
+                      t.headline,
+                      t.spot.toFixed(2),
+                      t.target?.toFixed(2) ?? "",
+                      t.inval?.toFixed(2) ?? "",
+                      t.confidence,
+                      t.outcome,
+                      t.pnlPct.toFixed(2),
+                      t.hoursToResolve.toFixed(1),
+                    ].join(",")
+                  ),
+                ].join("\n");
+                const blob = new Blob(["\uFEFF" + rows], { type: "text/csv;charset=utf-8" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = `liqradar-backtest-${new Date().toISOString().slice(0, 10)}.csv`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+              }}
+            >
+              exportar csv
+            </button>
+          )}
         </div>
       </div>
 

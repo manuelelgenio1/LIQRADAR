@@ -1,9 +1,20 @@
+import type { CSSProperties } from "react";
 import type { Verdict } from "../lib/engine";
 import { fmtUsd } from "../lib/engine";
 
+export interface BiasPoint {
+  t: number;
+  score: number;
+}
+
 /* Instrumento de rumbo: ¿hacia dónde va el mercado, LONG o SHORT?
    scorePct ∈ [-100, +100]:  + → sesgo alcista (LONG) · − → sesgo bajista (SHORT) */
-export function RumboGauge({ v }: { v: Verdict }) {
+export function RumboGauge({ v, history = [], magnetClose = false, magnetPrice }: {
+  v: Verdict;
+  history?: BiasPoint[];
+  magnetClose?: boolean;
+  magnetPrice?: number | null;
+}) {
   const angle = (Math.max(-100, Math.min(100, v.scorePct)) / 100) * 84;
   const dir = v.direction;
   const color = dir === "up" ? "#2fd6a5" : dir === "down" ? "#ff4d6d" : "#ffb547";
@@ -31,6 +42,17 @@ export function RumboGauge({ v }: { v: Verdict }) {
   return (
     <div className="panel relative overflow-hidden p-5">
       <div className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(620px 260px at 18% 100%, ${color}14, transparent 70%)` }} />
+
+      {/* alerta de zona magnética */}
+      {magnetClose && (
+        <div
+          className="feed-in absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-2.5 rounded-md border px-4 py-2 font-mono text-[11px] font-700 tracking-widest text-warn shadow-[0_0_26px_-6px_rgba(255,181,71,0.7)]"
+          style={{ borderColor: "rgba(255,181,71,0.55)", background: "rgba(20,17,6,0.92)", "--pulse-color": "#ffb547" } as React.CSSProperties}
+        >
+          <span className="live-dot" style={{ background: "#ffb547", color: "#ffb547" }} />
+          ZONA MAGNÉTICA · PRECIO A {magnetPrice ? fmtUsd(magnetPrice) : "—"} DEL IMÁN
+        </div>
+      )}
 
       <div className="relative grid grid-cols-1 items-center gap-6 lg:grid-cols-[330px_1fr]">
         {/* dial */}
@@ -111,6 +133,50 @@ export function RumboGauge({ v }: { v: Verdict }) {
           </div>
         </div>
       </div>
+
+      {/* historial de sesgo */}
+      <div className="relative mt-4 border-t border-line/50 pt-3">
+        <div className="flex items-baseline justify-between">
+          <span className="panel-tag">evolución del sesgo en esta sesión</span>
+          <span className="font-mono text-[10px] tabular-nums text-dusk">
+            {history.length > 1 ? `${history.length} lecturas · últimos ${Math.round((history[history.length - 1].t - history[0].t) / 60000)} min` : "recopilando lecturas…"}
+          </span>
+        </div>
+        <BiasHistory points={history} color={color} />
+      </div>
     </div>
+  );
+}
+
+function BiasHistory({ points, color }: { points: BiasPoint[]; color: string }) {
+  const W = 900;
+  const H = 74;
+  const PAD = 4;
+  if (points.length < 2) {
+    return <div className="mt-2 flex h-[74px] items-center justify-center font-mono text-[10px] text-dusk">el radar registra el sesgo cada pocos segundos…</div>;
+  }
+  const x = (i: number) => PAD + (i / (points.length - 1)) * (W - PAD * 2);
+  const y = (s: number) => H / 2 - (Math.max(-100, Math.min(100, s)) / 100) * (H / 2 - PAD);
+  const pts = points.map((p, i) => `${x(i).toFixed(1)},${y(p.score).toFixed(1)}`).join(" ");
+  const last = points[points.length - 1];
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 h-[74px] w-full" preserveAspectRatio="none">
+      <line x1={PAD} x2={W - PAD} y1={H / 2} y2={H / 2} stroke="rgba(255,181,71,0.4)" strokeWidth="1" strokeDasharray="4 5" />
+      <text x={W - PAD} y={H / 2 - 5} textAnchor="end" className="fill-[#5ef2c4] font-mono text-[9px]">LONG +</text>
+      <text x={W - PAD} y={H / 2 + 12} textAnchor="end" className="fill-[#ff7d95] font-mono text-[9px]">SHORT −</text>
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={color}
+        strokeWidth="2.2"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        style={{ filter: `drop-shadow(0 0 5px ${color}66)` }}
+      />
+      <circle cx={x(points.length - 1)} cy={y(last.score)} r="4" fill={color}>
+        <animate attributeName="r" values="4;6;4" dur="1.6s" repeatCount="indefinite" />
+      </circle>
+    </svg>
   );
 }

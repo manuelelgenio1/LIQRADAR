@@ -22,6 +22,8 @@ import { RumboGauge } from "./components/RumboGauge";
 import { LiqHeatmap } from "./components/LiqHeatmap";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { FlipAlert, type FlipInfo } from "./components/FlipAlert";
+import type { BiasPoint } from "./components/RumboGauge";
+import { loadSoundPref, playFlip, playMagnet, saveSoundPref } from "./lib/sound";
 import { MarketPulsePanel } from "./components/MarketPulsePanel";
 import { BenchmarkPanel } from "./components/BenchmarkPanel";
 
@@ -160,6 +162,44 @@ export default function App() {
     prevDirRef.current = dir;
   }, [analysis, roundedSpot]);
 
+  /* ---------- historial de sesgo (sparkline del rumbo) ---------- */
+  const [biasHist, setBiasHist] = useState<BiasPoint[]>([]);
+  const lastBiasRef = useRef(0);
+  useEffect(() => {
+    if (!analysis) return;
+    const now = Date.now();
+    const s = analysis.verdict.scorePct;
+    const last = biasHist[biasHist.length - 1];
+    // una lectura cada ≥4s, o antes si el sesgo saltó ≥6 puntos
+    if (now - lastBiasRef.current >= 4000 || !last || Math.abs(s - last.score) >= 6) {
+      lastBiasRef.current = now;
+      setBiasHist((h) => [...h.slice(-179), { t: now, score: s }]);
+    }
+  }, [analysis]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ---------- alertas sonoras ---------- */
+  const [soundOn, setSoundOn] = useState<boolean>(() => loadSoundPref());
+  const toggleSound = () => {
+    setSoundOn((on) => {
+      saveSoundPref(!on);
+      if (!on) playMagnet(); // confirmación audible al activar
+      return !on;
+    });
+  };
+  useEffect(() => {
+    if (soundOn && flip) playFlip(flip.dir);
+  }, [flip, soundOn]);
+
+  // zona magnética: precio cerca del imán objetivo (≤0.6% o dentro de 1 ATR)
+  const magnetClose =
+    !!analysis?.verdict.target &&
+    (analysis.verdict.cascade.length > 0 || analysis.verdict.target.distancePct <= 0.6);
+  const prevMagnetRef = useRef(false);
+  useEffect(() => {
+    if (soundOn && magnetClose && !prevMagnetRef.current) playMagnet();
+    prevMagnetRef.current = magnetClose;
+  }, [magnetClose, soundOn]);
+
   const r0 = useReveal();
   const r1 = useReveal();
   const r2 = useReveal();
@@ -178,13 +218,18 @@ export default function App() {
       <FlipAlert flip={flip} onDismiss={() => setFlip(null)} />
 
       <div className="relative z-10">
-        <TopBar m={market} />
+        <TopBar m={market} soundOn={soundOn} onToggleSound={toggleSound} />
 
         <main className="mx-auto max-w-[1500px] px-5 pb-16 pt-6">
           {/* rumbo: ¿LONG o SHORT? */}
           <section className="reveal mb-5" ref={r0}>
             {analysis ? (
-              <RumboGauge v={analysis.verdict} />
+              <RumboGauge
+                v={analysis.verdict}
+                history={biasHist}
+                magnetClose={magnetClose}
+                magnetPrice={analysis.verdict.target?.price ?? null}
+              />
             ) : (
               <div className="panel flex h-40 animate-pulse items-center justify-center font-mono text-xs text-dusk">
                 FIJANDO RUMBO…
