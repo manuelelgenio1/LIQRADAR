@@ -90,6 +90,10 @@ export default function App() {
     const fastSlopePct = ((last - market.candles[n - 1 - k].close) / market.candles[n - 1 - k].close) * 100;
     const slowSlopePct = ((last - market.candles[0].close) / market.candles[0].close) * 100;
 
+    // impulso de las últimas 4 velas (en unidades de ATR de vela)
+    const momBase = market.candles[Math.max(0, n - 5)];
+    const momPct = momBase.close > 0 ? ((last - momBase.close) / momBase.close) * 100 : 0;
+
     const verdict = computeVerdict({
       spot: roundedSpot,
       longPool,
@@ -114,6 +118,7 @@ export default function App() {
       oiUsdt,
       fastSlopePct,
       slowSlopePct,
+      momPct,
     });
     return { bins, longPool, shortPool, clusters, cvd, verdict, updatedAt: Date.now() };
   }, [market.candles, market.oi, market.fundingRate, market.fundingTrend, market.globalRatio, market.topRatio, market.takerRatio, market.oiChange24h, market.oiSlope5m, market.premium, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs]);

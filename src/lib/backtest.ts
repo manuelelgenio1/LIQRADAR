@@ -6,6 +6,23 @@
 
 import type { Candle, Verdict } from "./engine";
 import { atrOf, computeCvd, estimateLiquidationMap, computeVerdict } from "./engine";
+import type { SeriesPoint } from "./binance";
+
+/* Series históricas de posicionamiento para validar más factores */
+export interface BtPos {
+  taker?: SeriesPoint[]; // ratio compra/venta (1h)
+  account?: SeriesPoint[]; // ratio cuentas long/short (1h)
+  funding?: SeriesPoint[]; // funding rate (8h)
+}
+
+export interface FactorStat {
+  id: string;
+  label: string;
+  agreed: number; // veces que el factor coincidió con la dirección final
+  agreedCorrect: number; // de esas, cuántas fueron acierto
+  disagreed: number;
+  disagreedCorrect: number;
+}
 
 export interface BtTest {
   time: number; // unix s (momento de la señal)
@@ -39,6 +56,8 @@ export interface BtResult {
   byDir: { up: BtBucket; down: BtBucket };
   byBucket: BtBucket[];
   equity: number[]; // curva acumulada en %
+  factorStats: FactorStat[]; // precisión de cada factor sobre datos históricos
+  posCoverage: number; // % de tests que usaron datos reales de posicionamiento
   candlesUsed: number;
   windowSize: number;
   horizonH: number;
@@ -60,6 +79,32 @@ function slopesOf(candles: Candle[]): { fast: number; slow: number } {
   const fast = ((last - candles[n - 1 - k].close) / candles[n - 1 - k].close) * 100;
   const slow = ((last - candles[0].close) / candles[0].close) * 100;
   return { fast, slow };
+}
+
+/** Valor más cercano a t (± within segundos) o null si no hay cobertura */
+function lookupNear(series: SeriesPoint[] | undefined, t: number, within: number): number | null {
+  if (!series || series.length === 0) return null;
+  let best: SeriesPoint | null = null;
+  let bestD = Infinity;
+  for (const p of series) {
+    const d = Math.abs(p.time - t);
+    if (d < bestD) {
+      bestD = d;
+      best = p;
+    }
+  }
+  return best !== null && bestD <= within ? best.value : null;
+}
+
+/** Último valor con time <= t (para funding, que cambia cada 8h) */
+function lookupBefore(series: SeriesPoint[] | undefined, t: number): number | null {
+  if (!series || series.length === 0) return null;
+  let val: number | null = null;
+  for (const p of series) {
+    if (p.time <= t) val = p.value;
+    else break;
+  }
+  return val;
 }
 
 /** Evalúa una señal contra las velas siguientes (sin lookahead) */
@@ -108,11 +153,30 @@ export async function runWalkForward(
   msPerCandle: number,
   horizonH: number,
   sim: boolean,
-  onProgress: (pct: number) => void
+  onProgress: (pct: number) => void,
+  pos?: BtPos
 ): Promise<BtResult> {
   const horizonCandles = Math.max(1, Math.round((horizonH * 3600_000) / msPerCandle));
   const tests: BtTest[] = [];
   let neutralSkipped = 0;
+  let posUsed = 0; // tests que contaron con al menos un dato real de posicionamiento
+
+  // precisión por factor: ¿cuántas veces coincidió con la dirección y cuántas de esas acertaron?
+  const fstat = new Map<string, FactorStat>();
+  const bump = (id: string, label: string, agreed: boolean, correct: boolean) => {
+    let f = fstat.get(id);
+    if (!f) {
+      f = { id, label, agreed: 0, agreedCorrect: 0, disagreed: 0, disagreedCorrect: 0 };
+      fstat.set(id, f);
+    }
+    if (agreed) {
+      f.agreed++;
+      if (correct) f.agreedCorrect++;
+    } else {
+      f.disagreed++;
+      if (correct) f.disagreedCorrect++;
+    }
+  };
 
   const first = WINDOW;
   const last = candles.length - horizonCandles;
@@ -123,6 +187,7 @@ export async function runWalkForward(
     const i = steps[s];
     const win = candles.slice(i - WINDOW, i);
     const spot = candles[i].close;
+    const t = candles[i].time; // unix s
     const cvd = computeCvd(win);
     const { longPool, shortPool, nearLongPool, nearShortPool, clusters } = estimateLiquidationMap(
       win,
@@ -134,6 +199,22 @@ export async function runWalkForward(
       2
     );
     const slopes = slopesOf(win);
+
+    // impulso de las últimas 4 velas de la ventana
+    const momBase = win[Math.max(0, win.length - 5)];
+    const momPct = momBase.close > 0 ? ((spot - momBase.close) / momBase.close) * 100 : 0;
+
+    // factores de posicionamiento: históricos si hay cobertura, neutros si no
+    const takerRatio = lookupNear(pos?.taker, t, 3600) ?? 1;
+    const globalRatio = lookupNear(pos?.account, t, 3600) ?? 1;
+    const fundingRate = lookupBefore(pos?.funding, t) ?? 0;
+    const fundingTrend = fundingRate - (lookupBefore(pos?.funding, t - 64 * 3600) ?? fundingRate);
+    const hasPos =
+      lookupNear(pos?.taker, t, 3600) !== null ||
+      lookupNear(pos?.account, t, 3600) !== null ||
+      lookupBefore(pos?.funding, t) !== null;
+    if (hasPos) posUsed++;
+
     const v = computeVerdict({
       spot,
       longPool,
@@ -141,13 +222,11 @@ export async function runWalkForward(
       nearLongPool,
       nearShortPool,
       clusters,
-      // los factores de posicionamiento (funding, ratios, OI, takers, prima)
-      // no existen históricamente en este backtest → neutros
-      fundingRate: 0,
-      fundingTrend: 0,
-      globalRatio: 1,
-      topRatio: 1,
-      takerRatio: 1,
+      fundingRate,
+      fundingTrend,
+      globalRatio,
+      topRatio: 1, // sin histórico de top traders → neutro
+      takerRatio,
       oiChange24h: 0,
       oiSlope5m: 0,
       priceChange24h: ((spot - win[0].close) / win[0].close) * 100,
@@ -160,14 +239,26 @@ export async function runWalkForward(
       oiUsdt: 0,
       fastSlopePct: slopes.fast,
       slowSlopePct: slopes.slow,
+      momPct,
     });
 
     if (v.direction === "neutral") {
       neutralSkipped++;
     } else {
       const r = resolveSignal(v, spot, candles, i + 1, horizonCandles, msPerCandle);
+      const correct = r.outcome === "acierto";
+      const dirSign = v.direction === "up" ? 1 : -1;
+
+      // solo las señales cerradas (acierto/fallo) aportan a la estadística por factor
+      if (r.outcome !== "caducada") {
+        for (const f of v.factors) {
+          if (Math.abs(f.score) < 0.03) continue; // factor sin opinión
+          bump(f.id, f.label, Math.sign(f.score) === dirSign, correct);
+        }
+      }
+
       tests.push({
-        time: candles[i].time,
+        time: t,
         dir: v.direction,
         headline: v.headline,
         spot,
@@ -225,6 +316,12 @@ export async function runWalkForward(
     },
     byBucket,
     equity,
+    factorStats: Array.from(fstat.values()).sort((a, b) => {
+      const ra = a.agreed > 0 ? a.agreedCorrect / a.agreed : 0;
+      const rb = b.agreed > 0 ? b.agreedCorrect / b.agreed : 0;
+      return rb - ra;
+    }),
+    posCoverage: tests.length > 0 ? (posUsed / tests.length) * 100 : 0,
     candlesUsed: candles.length,
     windowSize: WINDOW,
     horizonH,

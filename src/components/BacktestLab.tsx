@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import type { BtResult, BtTest } from "../lib/backtest";
-import { runWalkForward } from "../lib/backtest";
-import { fetchKlines, simKlines } from "../lib/binance";
+import { runWalkForward, type BtPos } from "../lib/backtest";
+import { fetchKlines, simKlines, fetchTakerSeries, fetchAccountRatioSeries, fetchFundingSeries } from "../lib/binance";
 import { fmtUsd, type Candle } from "../lib/engine";
 
 const HORIZONS = [6, 12, 24];
@@ -76,11 +76,33 @@ export function BacktestLab({ spot }: { spot: number }) {
       setStepNote(`sin acceso a Binance (${why}) → usando simulador coherente…`);
     }
 
+    // series históricas de posicionamiento para validar también funding/takers/cuentas
+    let pos: BtPos | undefined;
+    if (!sim) {
+      setStepNote("descargando históricos de funding, takers y cuentas…");
+      const [tk, ac, fu] = await Promise.allSettled([
+        fetchTakerSeries("1h", 500),
+        fetchAccountRatioSeries("1h", 500),
+        fetchFundingSeries(200),
+      ]);
+      pos = {
+        taker: tk.status === "fulfilled" ? tk.value : undefined,
+        account: ac.status === "fulfilled" ? ac.value : undefined,
+        funding: fu.status === "fulfilled" ? fu.value : undefined,
+      };
+      const got = [pos.taker, pos.account, pos.funding].filter(Boolean).length;
+      setStepNote(
+        got > 0
+          ? `posicionamiento histórico OK (${got}/3 series) · re-ejecutando el motor…`
+          : "sin histórico de posicionamiento (se validan los factores de precio) · re-ejecutando…"
+      );
+    }
+
     try {
       setPhase("running");
-      const res = await runWalkForward(candles, 3_600_000, horizon, sim, setPct);
+      const res = await runWalkForward(candles, 3_600_000, horizon, sim, setPct, pos);
       console.info(
-        `[LiqRadar] prueba completada: ${res.tests.length} señales · acierto ${res.hitRate == null ? "—" : res.hitRate.toFixed(1) + "%"} · edge ${res.edgePct == null ? "—" : res.edgePct.toFixed(1) + " pts"}`
+        `[LiqRadar] prueba completada: ${res.tests.length} señales · acierto ${res.hitRate == null ? "—" : res.hitRate.toFixed(1) + "%"} · edge ${res.edgePct == null ? "—" : res.edgePct.toFixed(1) + " pts"} · cobertura posicionamiento ${res.posCoverage.toFixed(0)}%`
       );
       setResult(res);
       setPhase("done");
@@ -268,6 +290,51 @@ export function BacktestLab({ spot }: { spot: number }) {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* precisión por factor */}
+      {phase === "done" && r && r.factorStats.length > 0 && (
+        <div className="mt-4 rounded-lg border border-line/70 bg-ink-950/50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="panel-tag">precisión histórica de cada factor</span>
+              <p className="mt-0.5 max-w-2xl text-[11px] leading-relaxed text-dusk">
+                De todas las señales cerradas, ¿cuántas acertaron cuando el factor apoyó la dirección? Es la prueba de
+                qué piezas del motor aportan señal real y cuáles son ruido.
+              </p>
+            </div>
+            <span className="rounded-md border border-line bg-ink-950/70 px-2.5 py-1 font-mono text-[10px] tabular-nums text-mist">
+              cobertura posicionamiento real: <b className={r.posCoverage > 50 ? "text-long-hi" : "text-warn"}>{r.posCoverage.toFixed(0)}%</b>
+            </span>
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 md:grid-cols-2">
+            {r.factorStats.map((f) => {
+              const rate = f.agreed > 0 ? (f.agreedCorrect / f.agreed) * 100 : null;
+              const col = rate == null ? "#5d7099" : rate >= 55 ? "#2fd6a5" : rate >= 50 ? "#ffb547" : "#ff4d6d";
+              return (
+                <div key={f.id} className="flex items-center gap-3">
+                  <span className="w-[168px] shrink-0 truncate text-[11.5px] font-600 text-fog" title={f.label}>
+                    {f.label}
+                  </span>
+                  <div className="relative h-[7px] flex-1 overflow-hidden rounded-full bg-ink-900">
+                    <div className="absolute left-1/2 top-0 h-full w-px bg-line" />
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                      style={{ width: `${rate ?? 0}%`, background: col, opacity: 0.75 }}
+                    />
+                  </div>
+                  <span className="w-[92px] shrink-0 text-right font-mono text-[10.5px] tabular-nums" style={{ color: col }}>
+                    {rate == null ? "sin muestra" : `${rate.toFixed(0)}% · n=${f.agreed}`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-2.5 font-mono text-[9.5px] leading-relaxed text-dusk">
+            n = veces que el factor apoyó la dirección en señales cerradas. Factores con n bajo o sin muestra no tienen
+            histórico suficiente aún. La cobertura indica qué fracción de tests usó funding/takers/cuentas reales.
+          </p>
         </div>
       )}
 

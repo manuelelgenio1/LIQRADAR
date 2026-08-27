@@ -90,6 +90,7 @@ export interface VerdictInput {
   oiUsdt: number; // OI nocional en USDT (0 = desconocido)
   fastSlopePct: number; // tendencia del tercio reciente (%)
   slowSlopePct: number; // tendencia de toda la ventana (%)
+  momPct?: number; // impulso de las últimas velas (%) → evita llamar giros prematuros
 }
 
 const clamp = (v: number, lo = -1, hi = 1) => Math.min(hi, Math.max(lo, v));
@@ -275,6 +276,15 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   const factors: Factor[] = [];
   const warnings: Warning[] = [];
 
+  // clusters por lado (se reusan en pools, objetivo e invalidación)
+  const shorts = inp.clusters.filter((c) => c.side === "short");
+  const longs = inp.clusters.filter((c) => c.side === "long");
+  // magnetismo con decaimiento exponencial por distancia: la liquidez grande y cercana pesa más
+  const magnetism = (arr: typeof longs) =>
+    arr.reduce((a, c) => a + c.estNotional * Math.exp(-c.distancePct / 2.0), 0);
+  const longMag = magnetism(longs);
+  const shortMag = magnetism(shorts);
+
   // 1 · Funding: si los longs pagan, hay multitud long → combustible bajista
   const fScore = clamp(-inp.fundingRate / 0.00035);
   factors.push({
@@ -285,7 +295,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? `Longs pagan ${(inp.fundingRate * 100).toFixed(4)}% c/8h → multitud long`
         : `Shorts pagan ${(Math.abs(inp.fundingRate) * 100).toFixed(4)}% c/8h → multitud short`,
     score: fScore,
-    weight: 0.12,
+    weight: 0.11,
   });
   if (Math.abs(inp.fundingRate) >= 0.0003) {
     warnings.push({
@@ -329,13 +339,13 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     label: "Posiciones de top traders",
     detail: `Ratio ${inp.topRatio.toFixed(2)} → ${inp.topRatio > 1 ? "ballenas en LONG" : "ballenas en SHORT"}`,
     score: tScore,
-    weight: 0.10,
+    weight: 0.09,
   });
 
-  // 5 · Pools de liquidación ponderados por cercanía (la liquidez próxima es más magnética)
+  // 5 · Pools de liquidación con magnetismo por decaimiento de distancia
   const totalRaw = (inp.shortPool - inp.longPool) / (inp.shortPool + inp.longPool + 1e-9);
-  const nearRaw = (inp.nearShortPool - inp.nearLongPool) / (inp.nearShortPool + inp.nearLongPool + 1e-9);
-  const pRaw = 0.6 * nearRaw + 0.4 * totalRaw;
+  const decayRaw = (shortMag - longMag) / (shortMag + longMag + 1e-9);
+  const pRaw = 0.65 * decayRaw + 0.35 * totalRaw;
   const pScore = clamp(pRaw * 1.7);
   const poolX = inp.shortPool > inp.longPool ? inp.shortPool / Math.max(inp.longPool, 1) : inp.longPool / Math.max(inp.shortPool, 1);
   factors.push({
@@ -343,10 +353,10 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     label: "Pools de liquidación",
     detail:
       pRaw >= 0
-        ? `${poolX.toFixed(1)}× más shorts ARRIBA (cercanos: ${(nearRaw * 100).toFixed(0)}% neto) → imán alcista`
-        : `${poolX.toFixed(1)}× más longs ABAJO (cercanos: ${(nearRaw * 100).toFixed(0)}% neto) → imán bajista`,
+        ? `${poolX.toFixed(1)}× más shorts ARRIBA (magnetismo ${(decayRaw * 100).toFixed(0)}% neto) → imán alcista`
+        : `${poolX.toFixed(1)}× más longs ABAJO (magnetismo ${(decayRaw * 100).toFixed(0)}% neto) → imán bajista`,
     score: pScore,
-    weight: 0.18,
+    weight: 0.16,
   });
 
   // 6 · Interés abierto + tendencia 24h
@@ -375,7 +385,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   } else {
     osDetail = `OI ${inp.oiSlope5m >= 0 ? "+" : ""}${inp.oiSlope5m.toFixed(2)}% en 2.5h → apalancamiento estable`;
   }
-  factors.push({ id: "oiSlope", label: "OI en tiempo real (5m)", detail: osDetail, score: osScore, weight: 0.08 });
+  factors.push({ id: "oiSlope", label: "OI en tiempo real (5m)", detail: osDetail, score: osScore, weight: 0.07 });
 
   // 8 · Flujo de takers en futuros (quién cruza el spread)
   const tkScore = clamp((1 - inp.takerRatio) * 2.2);
@@ -455,7 +465,23 @@ export function computeVerdict(inp: VerdictInput): Verdict {
       ? `Tendencia reciente (${fast >= 0 ? "+" : ""}${fast.toFixed(1)}%) y de fondo (${slow >= 0 ? "+" : ""}${slow.toFixed(1)}%) ALINEADAS`
       : `Tendencia reciente (${fast >= 0 ? "+" : ""}${fast.toFixed(1)}%) vs fondo (${slow >= 0 ? "+" : ""}${slow.toFixed(1)}%) en conflicto`,
     score: cfScore,
-    weight: 0.07,
+    weight: 0.06,
+  });
+
+  // 13 · Impulso de las últimas velas: confirma el squeeze en curso y evita llamar giros prematuros
+  const momPct = inp.momPct ?? 0;
+  const momScore = clamp(momPct / 1.2);
+  factors.push({
+    id: "momentum",
+    label: "Impulso reciente",
+    detail:
+      Math.abs(momPct) < 0.15
+        ? "Sin impulso definido en las últimas velas"
+        : momPct > 0
+          ? `Impulso alcista +${momPct.toFixed(2)}% → el squeeze alcista ya está en marcha`
+          : `Impulso bajista ${momPct.toFixed(2)}% → la caza de longs ya está en marcha`,
+    score: momScore,
+    weight: 0.06,
   });
 
   const wSum = factors.reduce((a, f) => a + f.weight, 0);
@@ -478,8 +504,6 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     warnings.push({ tone: "warn", text: `Volatilidad elevada (ATR ${atrPct.toFixed(2)}%/h): confianza reducida, las barridas son más violentas e impredecibles` });
   }
 
-  const shorts = inp.clusters.filter((c) => c.side === "short");
-  const longs = inp.clusters.filter((c) => c.side === "long");
   const target = direction === "up" ? shorts[0] ?? null : direction === "down" ? longs[0] ?? null : null;
   const invalidation = direction === "up" ? longs[0] ?? null : direction === "down" ? shorts[0] ?? null : null;
 
