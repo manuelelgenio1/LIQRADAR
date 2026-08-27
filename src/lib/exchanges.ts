@@ -94,3 +94,48 @@ export const EXCHANGE_COLOR: Record<ExchangeQuote["exchange"], string> = {
   okx: "#e9f1ff",
   bybit: "#3fb6ff",
 };
+
+/* ============================================================
+   Histórico de funding por exchange (para el heatmap).
+   ============================================================ */
+export interface FundingPoint {
+  time: number; // unix ms
+  rate: number; // fracción por periodo (0.0001 = 0.01%)
+}
+
+interface BinanceFunding {
+  fundingRate: string;
+  fundingTime: number;
+}
+
+export async function fetchFundingHistoryBinance(limit = 100): Promise<FundingPoint[]> {
+  const r = await fetchJson<BinanceFunding[]>(
+    `https://fapi.binance.com/fapi/v1/fundingRate?symbol=BTCUSDT&limit=${limit}`
+  );
+  return r.map((x) => ({ time: x.fundingTime, rate: Number(x.fundingRate) }));
+}
+
+interface OkxFundingHist {
+  data: { fundingRate: string; fundingTime: string }[];
+}
+
+export async function fetchFundingHistoryOkx(limit = 100): Promise<FundingPoint[]> {
+  const r = await fetchJson<OkxFundingHist>(
+    `https://www.okx.com/api/v5/public/funding-rate-history?instId=BTC-USDT-SWAP&limit=${limit}`
+  );
+  return r.data.map((x) => ({ time: Number(x.fundingTime), rate: Number(x.fundingRate) }));
+}
+
+interface BybitFundingHist {
+  result: { list: { fundingRate: string; fundingRateTimestamp: string }[] };
+}
+
+export async function fetchFundingHistoryBybit(limit = 100): Promise<FundingPoint[]> {
+  const r = await fetchJson<BybitFundingHist>(
+    `https://api.bybit.com/v5/market/funding/history?category=linear&symbol=BTCUSDT&limit=${limit}`
+  );
+  return (r.result?.list ?? []).map((x) => ({
+    time: Number(x.fundingRateTimestamp),
+    rate: Number(x.fundingRate),
+  }));
+}

@@ -34,6 +34,11 @@ const ROWS: Row[] = [
     cells: ["yes", "yes", "yes", "yes"],
   },
   {
+    feature: "Heatmap de funding por exchange (Binance · OKX · Bybit)",
+    detail: "Settlements de funding (8h) trazados por exchange para ver dónde se apila el apalancamiento. Coinglass lo tiene para Binance; la comparación multi-exchange lado a lado es la diferencia.",
+    cells: ["yes", "partial", "no", "partial"],
+  },
+  {
     feature: "Delta de takers (CVD) y divergencias",
     detail: "Volumen de compra agresiva por vela + detección automática de divergencia precio/CVD.",
     cells: ["yes", "partial", "no", "yes"],

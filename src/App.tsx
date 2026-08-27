@@ -33,11 +33,13 @@ import { MarketPulsePanel } from "./components/MarketPulsePanel";
 import { BenchmarkPanel } from "./components/BenchmarkPanel";
 import { ConfluencePanel } from "./components/ConfluencePanel";
 import { ExchangeRadarPanel } from "./components/ExchangeRadarPanel";
+import { FundingHeatmap } from "./components/FundingHeatmap";
 import { AlertCenter, type SniperCfg, type PriceLevel } from "./components/AlertCenter";
 import { SniperToast, type SniperInfo } from "./components/SniperToast";
 import { LevelToast, type LevelHit } from "./components/LevelToast";
 import { RiskPanel } from "./components/RiskPanel";
 import { Journal } from "./components/Journal";
+import { OnboardingTour } from "./components/OnboardingTour";
 import { loadCalibration, loadHitRate, saveHitRate, type Calibration } from "./lib/calibration";
 import { OrderBookPanel } from "./components/OrderBookPanel";
 
@@ -72,6 +74,7 @@ const STEPS = [
 export default function App() {
   const [tf, setTf] = useState<Timeframe>("72h");
   const [levs, setLevs] = useState<number[]>([10, 25, 50, 100]);
+  const [tourOpen, setTourOpen] = useState(false);
   const market = useMarket(tf);
   const confluence = useConfluence();
 
@@ -442,6 +445,7 @@ export default function App() {
   const r14 = useReveal();
   const r15 = useReveal();
   const r16 = useReveal();
+  const r17 = useReveal();
 
   return (
     <div className="relative min-h-screen font-body">
@@ -451,6 +455,7 @@ export default function App() {
       <FlipAlert flip={flip} onDismiss={() => setFlip(null)} />
       <SniperToast s={sniperAlert} onDismiss={() => setSniperAlert(null)} />
       <LevelToast hit={levelHit} onDismiss={() => setLevelHit(null)} />
+      <OnboardingTour forceOpen={tourOpen} onCloseRequest={() => setTourOpen(false)} />
 
       <div className="relative z-10">
         <TopBar m={market} soundOn={soundOn} onToggleSound={toggleSound} />
@@ -618,6 +623,11 @@ export default function App() {
             <OrderBookPanel spot={market.spot} />
           </section>
 
+          {/* heatmap de funding por exchange */}
+          <section className="panel reveal mt-5" ref={r17}>
+            <FundingHeatmap />
+          </section>
+
           {/* gestión de riesgo */}
           <section className="panel reveal mt-5" ref={r12}>
             <RiskPanel
@@ -752,7 +762,15 @@ export default function App() {
               <b className="text-mist">LIQRADAR</b> · radar de liquidaciones BTC · los imanes de liquidez no predicen el
               futuro, solo muestran dónde duele
             </span>
-            <span>datos: Binance · estimación propia · {new Date().getFullYear()}</span>
+            <span className="flex items-center gap-4">
+              <button
+                onClick={() => setTourOpen(true)}
+                className="rounded-md border border-line px-3 py-1.5 font-mono text-[10px] text-mist transition-all hover:-translate-y-0.5 hover:border-pulse/60 hover:text-pulse"
+              >
+                ⟳ ver tour de nuevo
+              </button>
+              <span>datos: Binance · estimación propia · {new Date().getFullYear()}</span>
+            </span>
           </div>
         </footer>
       </div>
