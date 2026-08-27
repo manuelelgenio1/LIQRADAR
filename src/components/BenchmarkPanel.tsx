@@ -65,8 +65,8 @@ const ROWS: Row[] = [
   },
   {
     feature: "Order book L2 / footprint / opciones",
-    detail: "Profundidad de libro en tiempo real, max pain y flujo de opciones: terreno de Hyblock y Coinglass Pro.",
-    cells: ["no", "partial", "no", "yes"],
+    detail: "Profundidad de libro en vivo con detección de muros y desequilibrio (panel «order flow»); footprint por vela y opciones siguen siendo terreno de Hyblock y Coinglass Pro.",
+    cells: ["partial", "partial", "no", "yes"],
   },
 ];
 

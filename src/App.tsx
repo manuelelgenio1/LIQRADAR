@@ -29,6 +29,7 @@ import { BenchmarkPanel } from "./components/BenchmarkPanel";
 import { ExchangeRadarPanel } from "./components/ExchangeRadarPanel";
 import { AlertCenter, type SniperCfg } from "./components/AlertCenter";
 import { SniperToast, type SniperInfo } from "./components/SniperToast";
+import { OrderBookPanel } from "./components/OrderBookPanel";
 
 const STEPS = [
   {
@@ -309,6 +310,7 @@ export default function App() {
   const r8 = useReveal();
   const r9 = useReveal();
   const r10 = useReveal();
+  const r11 = useReveal();
 
   return (
     <div className="relative min-h-screen font-body">
@@ -327,6 +329,7 @@ export default function App() {
             {analysis ? (
               <RumboGauge
                 v={analysis.verdict}
+                spot={market.spot}
                 history={biasHist}
                 magnetClose={magnetClose}
                 magnetPrice={analysis.verdict.target?.price ?? null}
@@ -449,6 +452,11 @@ export default function App() {
             />
           </section>
 
+          {/* order flow L2 */}
+          <section className="panel reveal mt-5" ref={r11}>
+            <OrderBookPanel spot={market.spot} />
+          </section>
+
           {/* acumulación + track record */}
           <div className="reveal mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_1fr]" ref={r3}>
             <section className="panel">
@@ -547,6 +555,7 @@ export default function App() {
                   <li><span className="text-long">▸</span> Binance Spot — velas y precio en vivo (WebSocket)</li>
                   <li><span className="text-long">▸</span> Binance USDⓈ-M — funding, interés abierto, ratios L/S</li>
                   <li><span className="text-long">▸</span> Binance Futuros — stream <span className="text-fog">!forceOrder</span> de liquidaciones</li>
+                  <li><span className="text-long">▸</span> Binance Spot — libro de órdenes L2 (muros y desequilibrio)</li>
                   <li><span className="text-long">▸</span> OKX y Bybit — precio, funding y OI para el radar multi-exchange</li>
                   <li><span className="text-long">▸</span> Webhook propio — alertas francotirador hacia Telegram/Discord</li>
                   <li><span className="text-warn">▸</span> Sin conexión: simulador coherente para seguir practicando</li>

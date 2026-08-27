@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { CSSProperties } from "react";
 import type { Verdict } from "../lib/engine";
 import { fmtUsd } from "../lib/engine";
@@ -9,8 +10,9 @@ export interface BiasPoint {
 
 /* Instrumento de rumbo: ¿hacia dónde va el mercado, LONG o SHORT?
    scorePct ∈ [-100, +100]:  + → sesgo alcista (LONG) · − → sesgo bajista (SHORT) */
-export function RumboGauge({ v, history = [], magnetClose = false, magnetPrice }: {
+export function RumboGauge({ v, spot, history = [], magnetClose = false, magnetPrice }: {
   v: Verdict;
+  spot: number;
   history?: BiasPoint[];
   magnetClose?: boolean;
   magnetPrice?: number | null;
@@ -20,6 +22,26 @@ export function RumboGauge({ v, history = [], magnetClose = false, magnetPrice }
   const color = dir === "up" ? "#2fd6a5" : dir === "down" ? "#ff4d6d" : "#ffb547";
   const word = dir === "up" ? "LONG" : dir === "down" ? "SHORT" : "NEUTRO";
   const tag = dir === "up" ? "rumbo alcista" : dir === "down" ? "rumbo bajista" : "sin rumbo definido";
+
+  const [copied, setCopied] = useState(false);
+  const copySignal = () => {
+    const lines = [
+      `LiqRadar · BTC ${new Date().toLocaleString("es-ES")}`,
+      `RUMBO: ${word} (sesgo ${v.scorePct > 0 ? "+" : ""}${v.scorePct} · confianza ${v.confidence}%)`,
+      `Spot: ${fmtUsd(spot)}`,
+      `Imán de liquidez: ${v.target ? fmtUsd(v.target.price) : "—"}`,
+      `Invalidación: ${v.invalidation ? fmtUsd(v.invalidation.price) : "—"}`,
+      `Ventana: ${v.windowH[0]}–${v.windowH[1]}h`,
+      v.sub,
+    ];
+    try {
+      if (navigator.clipboard) void navigator.clipboard.writeText(lines.join("\n"));
+    } catch {
+      /* noop */
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
 
   // ticks cada 20 unidades
   const ticks = [];
@@ -95,6 +117,13 @@ export function RumboGauge({ v, history = [], magnetClose = false, magnetPrice }
           <div className="flex items-center gap-2">
             <span className="live-dot" style={{ background: color, color }} />
             <span className="panel-tag">rumbo del mercado · btc global 24/7 · binance</span>
+            <button
+              onClick={copySignal}
+              className="ml-auto rounded-md border border-line px-2.5 py-1 font-mono text-[10px] tracking-widest text-mist transition-all hover:border-long/60 hover:text-long-hi"
+              title="Copiar la señal actual al portapapeles"
+            >
+              {copied ? "✓ COPIADA" : "⧉ COPIAR SEÑAL"}
+            </button>
           </div>
 
           <div className="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">

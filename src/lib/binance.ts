@@ -51,6 +51,38 @@ export async function fetchTicker24h(): Promise<Ticker24h> {
   };
 }
 
+/* --------- profundidad del libro (order book L2) --------- */
+export interface BookLevel {
+  price: number;
+  qty: number; // BTC
+  notional: number; // USDT
+}
+
+export interface OrderBook {
+  bids: BookLevel[]; // ordenadas de mayor a menor precio
+  asks: BookLevel[]; // ordenadas de menor a mayor precio
+  mid: number;
+}
+
+export async function fetchOrderBook(limit = 100): Promise<OrderBook> {
+  const r = await getJson<{ bids: string[][]; asks: string[][] }>(
+    `${SPOT}/api/v3/depth?symbol=BTCUSDT&limit=${limit}`
+  );
+  const bids = r.bids.map((b) => {
+    const price = Number(b[0]);
+    const qty = Number(b[1]);
+    return { price, qty, notional: price * qty };
+  });
+  const asks = r.asks.map((a) => {
+    const price = Number(a[0]);
+    const qty = Number(a[1]);
+    return { price, qty, notional: price * qty };
+  });
+  const bestBid = bids[0]?.price ?? 0;
+  const bestAsk = asks[0]?.price ?? 0;
+  return { bids, asks, mid: bestBid > 0 && bestAsk > 0 ? (bestBid + bestAsk) / 2 : bestBid || bestAsk };
+}
+
 export async function fetchFunding(): Promise<{ rate: number; mark: number; index: number; nextTime: number }> {
   const r = await getJson<Record<string, string>>(`${FUT}/fapi/v1/premiumIndex?symbol=BTCUSDT`);
   return {
