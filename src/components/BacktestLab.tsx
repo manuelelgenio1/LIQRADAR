@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import type { BtResult, BtTest } from "../lib/backtest";
 import { runWalkForward } from "../lib/backtest";
 import { fetchKlines, simKlines } from "../lib/binance";
-import { fmtUsd } from "../lib/engine";
+import { fmtUsd, type Candle } from "../lib/engine";
 
 const HORIZONS = [6, 12, 24];
 
@@ -41,29 +41,54 @@ function OutcomeChip({ o }: { o: BtTest["outcome"] }) {
 }
 
 export function BacktestLab({ spot }: { spot: number }) {
-  const [phase, setPhase] = useState<"idle" | "running" | "done">("idle");
+  const [phase, setPhase] = useState<"idle" | "downloading" | "running" | "done" | "error">("idle");
   const [pct, setPct] = useState(0);
+  const [stepNote, setStepNote] = useState("");
+  const [errMsg, setErrMsg] = useState("");
   const [horizon, setHorizon] = useState(12);
   const [result, setResult] = useState<BtResult | null>(null);
   const spotRef = useRef(spot);
   spotRef.current = spot;
 
+  const busy = phase === "running" || phase === "downloading";
+
   const run = async () => {
-    setPhase("running");
+    if (busy) return;
+    console.info("[LiqRadar] prueba iniciada: descargando 1000 velas de 1h…");
+    setPhase("downloading");
     setPct(0);
     setResult(null);
-    let candles;
+    setErrMsg("");
+    setStepNote("descargando 1000 velas de 1h desde Binance…");
+
+    let candles: Candle[];
     let sim = false;
     try {
       candles = await fetchKlines("1h", 1000);
-      if (candles.length < 200) throw new Error("pocas velas");
-    } catch {
-      candles = simKlines(spotRef.current, 1000, 3_600_000);
+      if (candles.length < 200) throw new Error(`Binance devolvió ${candles.length} velas (mínimo 200)`);
+      console.info(`[LiqRadar] ${candles.length} velas reales descargadas`);
+      setStepNote(`${candles.length} velas reales descargadas · re-ejecutando el motor paso a paso…`);
+    } catch (e) {
       sim = true;
+      candles = simKlines(spotRef.current, 1000, 3_600_000);
+      const why = e instanceof Error ? e.message : "red no disponible";
+      console.warn(`[LiqRadar] sin acceso a Binance (${why}) → simulador`);
+      setStepNote(`sin acceso a Binance (${why}) → usando simulador coherente…`);
     }
-    const res = await runWalkForward(candles, 3_600_000, horizon, sim, setPct);
-    setResult(res);
-    setPhase("done");
+
+    try {
+      setPhase("running");
+      const res = await runWalkForward(candles, 3_600_000, horizon, sim, setPct);
+      console.info(
+        `[LiqRadar] prueba completada: ${res.tests.length} señales · acierto ${res.hitRate == null ? "—" : res.hitRate.toFixed(1) + "%"} · edge ${res.edgePct == null ? "—" : res.edgePct.toFixed(1) + " pts"}`
+      );
+      setResult(res);
+      setPhase("done");
+    } catch (e) {
+      console.error("[LiqRadar] fallo del backtest:", e);
+      setErrMsg(e instanceof Error ? e.message : String(e));
+      setPhase("error");
+    }
   };
 
   const r = result;
@@ -86,29 +111,47 @@ export function BacktestLab({ spot }: { spot: number }) {
 
         <div className="flex items-center gap-2">
           {HORIZONS.map((h) => (
-            <button key={h} className={`chip ${horizon === h ? "on" : ""}`} onClick={() => setHorizon(h)} disabled={phase === "running"}>
+            <button key={h} className={`chip ${horizon === h ? "on" : ""}`} onClick={() => setHorizon(h)} disabled={busy}>
               {h}h
             </button>
           ))}
           <button
             onClick={run}
-            disabled={phase === "running"}
+            disabled={busy}
             className="ml-1 rounded-md border border-long/60 bg-long/10 px-4 py-1.5 font-mono text-[12px] font-700 tracking-widest text-long-hi transition-all hover:bg-long/20 hover:shadow-[0_0_18px_-4px_rgba(47,214,165,0.6)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {phase === "running" ? "EJECUTANDO…" : "▶ EJECUTAR PRUEBA"}
+            {phase === "downloading" ? "⬇ DESCARGANDO…" : phase === "running" ? "EJECUTANDO…" : "▶ EJECUTAR PRUEBA"}
           </button>
         </div>
       </div>
 
-      {phase === "running" && (
+      {(phase === "running" || phase === "downloading") && (
         <div className="mt-5 rounded-lg border border-line/70 bg-ink-950/50 p-4">
-          <div className="flex justify-between font-mono text-[11px] text-mist">
-            <span>Re-ejecutando el motor sobre el historial…</span>
-            <span className="tabular-nums text-long-hi">{pct}%</span>
+          <div className="flex justify-between gap-3 font-mono text-[11px] text-mist">
+            <span className="flex items-center gap-2">
+              <span className="live-dot" style={{ background: "#2fd6a5", color: "#2fd6a5" }} />
+              {stepNote}
+            </span>
+            <span className="tabular-nums text-long-hi">{phase === "downloading" ? "· · ·" : `${pct}%`}</span>
           </div>
           <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink-900">
-            <div className="h-full rounded-full bg-long transition-all duration-200" style={{ width: `${pct}%` }} />
+            {phase === "downloading" ? (
+              <div className="indet-bar h-full rounded-full bg-pulse" />
+            ) : (
+              <div className="h-full rounded-full bg-long transition-all duration-200" style={{ width: `${pct}%` }} />
+            )}
           </div>
+        </div>
+      )}
+
+      {phase === "error" && (
+        <div className="mt-5 rounded-lg border border-short/40 bg-short/[0.05] p-4">
+          <div className="font-mono text-[12px] font-700 tracking-widest text-short-hi">LA PRUEBA FALLÓ</div>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-mist">
+            {errMsg || "error desconocido"}. El detalle completo está en la consola del navegador (F12) — revisa la
+            conexión a Binance y reintenta.
+          </p>
+          <button onClick={run} className="chip mt-3">REINTENTAR</button>
         </div>
       )}
 
@@ -196,8 +239,11 @@ export function BacktestLab({ spot }: { spot: number }) {
       )}
 
       {phase === "idle" && (
-        <div className="mt-5 flex items-center justify-center rounded-lg border border-dashed border-line/70 py-8 font-mono text-[12px] text-dusk">
-          Pulsa «EJECUTAR PRUEBA» para auditar el modelo contra ~41 días de historia real
+        <div className="mt-5 rounded-lg border border-dashed border-line/70 px-5 py-7 text-center font-mono text-[12px] leading-relaxed text-dusk">
+          Pulsa «▶ EJECUTAR PRUEBA» — primero descarga ~41 días de velas reales de Binance (unos segundos) y luego
+          re-ejecuta el motor sobre cada una. Verás el progreso en vivo y el detalle en la consola (F12).
+          <br />
+          Si tu red bloquea Binance, la prueba corre igual sobre el simulador y lo indica con transparencia.
         </div>
       )}
     </div>

@@ -203,6 +203,15 @@ body {
 }
 .verdict-pulse { animation: verdictPulse 1.8s ease-out infinite; }
 
+@keyframes indet {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(440%); }
+}
+.indet-bar {
+  width: 28%;
+  animation: indet 1.15s cubic-bezier(0.45, 0.1, 0.45, 0.9) infinite;
+}
+
 /* ---------- scroll reveal ---------- */
 .reveal {
   opacity: 0;
