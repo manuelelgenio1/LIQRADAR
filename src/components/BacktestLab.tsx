@@ -312,7 +312,10 @@ export function BacktestLab({ spot, onCalibrated, onHitRate }: {
               {r.tests.slice(-8).reverse().map((t) => (
                 <div key={t.time} className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-md border border-line/40 px-2.5 py-1 font-mono text-[10.5px] tabular-nums">
                   <OutcomeChip o={t.outcome} />
-                  <span className={`font-700 ${t.dir === "up" ? "text-long-hi" : "text-short-hi"}`}>{t.headline}</span>
+                  <span className={`font-700 ${t.dir === "up" ? "text-long-hi" : "text-short-hi"}`}>
+                    {t.dir === "up" ? "▲ LONG" : "▼ SHORT"}
+                  </span>
+                  <span className="text-[9px] text-dusk" title={t.headline}>{t.dir === "up" ? "short squeeze" : "long squeeze"}</span>
                   <span className="text-mist">@{fmtUsd(t.spot)} → {t.target ? fmtUsd(t.target) : "—"}</span>
                   <span className="ml-auto text-dusk">{t.pnlPct >= 0 ? "+" : ""}{t.pnlPct.toFixed(2)}% · {t.hoursToResolve.toFixed(0)}h</span>
                 </div>

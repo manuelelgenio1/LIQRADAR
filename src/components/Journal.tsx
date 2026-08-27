@@ -246,7 +246,9 @@ export function Journal({ spot, verdict }: { spot: number; verdict: Verdict | nu
                 {t.side === "long" ? "LONG" : "SHORT"}
               </span>
               <span className="text-mist">
-                {fmtUsd(t.entry)} → <span className="text-long-hi">{fmtUsd(t.target)}</span> / <span className="text-short-hi">{fmtUsd(t.stop)}</span>
+                {fmtUsd(t.entry)} →{" "}
+                <span className={t.side === "long" ? "text-long-hi" : "text-short-hi"}>{fmtUsd(t.target)}</span> /{" "}
+                <span className={t.side === "long" ? "text-short-hi" : "text-long-hi"}>{fmtUsd(t.stop)}</span>
               </span>
               {t.sizeUsd > 0 && <span className="text-dusk">${t.sizeUsd.toLocaleString("en-US")}</span>}
               {t.notes && <span className="max-w-[220px] truncate text-[10px] italic text-dusk" title={t.notes}>“{t.notes}”</span>}

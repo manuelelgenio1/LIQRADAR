@@ -140,6 +140,9 @@ export function TrackRecord({ preds, spot }: { preds: Prediction[]; spot: number
                   {st.label}
                 </span>
                 <span className={`font-mono text-[11px] font-700 ${p.direction === "up" ? "text-long-hi" : "text-short-hi"}`}>
+                  {p.direction === "up" ? "▲ LONG" : "▼ SHORT"}
+                </span>
+                <span className="rounded-sm border border-line/60 bg-ink-900/40 px-1.5 py-0.5 font-mono text-[8.5px] tracking-wider text-mist" title={p.headline}>
                   {p.headline}
                 </span>
                 <span className="font-mono text-[10.5px] tabular-nums text-mist">

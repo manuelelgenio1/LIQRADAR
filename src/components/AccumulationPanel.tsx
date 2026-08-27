@@ -98,14 +98,16 @@ export function AccumulationPanel(p: Props) {
           <div className="flex items-center justify-between">
             <span className="panel-tag">funding perpetuo</span>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-              <path d="M8 1v14M4.5 4.5 8 1l3.5 3.5M4.5 11.5 8 15l3.5-3.5" stroke={p.fundingRate >= 0 ? "#2fd6a5" : "#ff4d6d"} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M8 1v14M4.5 4.5 8 1l3.5 3.5M4.5 11.5 8 15l3.5-3.5" stroke={p.fundingRate >= 0 ? "#ff4d6d" : "#2fd6a5"} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <div className={`mt-2 font-mono text-xl font-700 tabular-nums ${p.fundingRate >= 0 ? "text-long" : "text-short"}`}>
+          <div className={`mt-2 font-mono text-xl font-700 tabular-nums ${p.fundingRate >= 0 ? "text-short" : "text-long"}`}>
             {(p.fundingRate * 100).toFixed(4)}%
           </div>
           <p className="mt-1 text-[11px] leading-snug text-dusk">
-            {p.fundingRate >= 0 ? "Longs pagan a shorts → exceso de compradores" : "Shorts pagan a longs → exceso de vendedores"}
+            {p.fundingRate >= 0
+              ? "Longs pagan a shorts → multitud long apilada = combustible bajista"
+              : "Shorts pagan a longs → multitud short apilada = combustible alcista"}
           </p>
         </div>
 

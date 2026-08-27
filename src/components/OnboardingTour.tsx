@@ -34,28 +34,28 @@ const STEPS: Step[] = [
     color: "#ffb547",
     title: "Dónde está el combustible",
     body: "Cada barra es un nivel con liquidaciones estimadas. Verde bajo el precio = longs que serán cazados (bajista), rojo arriba = shorts (alcista). El color de cada barra indica el apalancamiento: 10× azul → 100× magenta. Las zonas brillantes son imanes.",
-    where: "Panel 02",
+    where: "Zona Mapa · panel M3",
   },
   {
     tag: "MOTOR",
     color: "#ff4d6d",
     title: "Por qué el radar opina lo que opina",
-    body: "El panel de predicción desglosa los 18 factores (funding, pools, takers, OI…) y cuánto aporta cada uno al sesgo. No es una caja negra: puedes ver exactamente qué está empujando la aguja.",
-    where: "Panel 01, columna derecha",
+    body: "El panel de predicción desglosa los 18 factores (funding, pools, takers, OI…) agrupados en dos escuelas —contrarian y de impulso— y cuánto aporta cada uno al sesgo. No es una caja negra: puedes ver exactamente qué está empujando la aguja.",
+    where: "Zona Mapa · panel M4, columna derecha",
   },
   {
     tag: "LABORATORIO",
     color: "#e05cd0",
     title: "Comprueba que funciona",
     body: "Pulsa «Ejecutar prueba»: re-ejecuta el motor contra 41 días de velas reales y te dice la tasa de acierto, el edge vs azar y qué factores funcionan de verdad. Es la prueba honesta de que la herramienta no es humo.",
-    where: "Panel 10",
+    where: "Zona Validación · panel V3",
   },
   {
     tag: "RIESGO",
     color: "#e9f1ff",
     title: "Convierte la señal en un plan",
     body: "Antes de operar, pasa por la gestión de riesgo: define capital y % de riesgo, y calcula el tamaño de posición, el apalancamiento implícito y el ratio R:R contra el objetivo e invalidación del radar.",
-    where: "Panel 07",
+    where: "Zona Operativa · panel O1",
   },
 ];
 
