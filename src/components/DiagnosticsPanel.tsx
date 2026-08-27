@@ -3,6 +3,7 @@ import type { MarketData } from "../hooks/useMarket";
 import type { Cluster, CvdInfo, Verdict } from "../lib/engine";
 import { fmtCompact, fmtTime, fmtUsd } from "../lib/engine";
 import type { Prediction } from "../lib/history";
+import { loadCalibration } from "../lib/calibration";
 
 /* ============================================================
    Diagnóstico en vivo: prueba de integridad de la herramienta.
