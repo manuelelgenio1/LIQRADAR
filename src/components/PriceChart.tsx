@@ -16,9 +16,10 @@ interface Props {
   clusters: Cluster[];
   spot: number;
   oiHistory?: OIPoint[];
+  levels?: { price: number; label: string }[];
 }
 
-export function PriceChart({ candles, clusters, spot, oiHistory }: Props) {
+export function PriceChart({ candles, clusters, spot, oiHistory, levels }: Props) {
   const elRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -176,7 +177,20 @@ export function PriceChart({ candles, clusters, spot, oiHistory }: Props) {
       });
       linesRef.current.push(line);
     });
-  }, [clusters, spot]);
+
+    // niveles clave de estructura (puntos, cian tenue)
+    (levels ?? []).slice(0, 4).forEach((lv) => {
+      const line = series.createPriceLine({
+        price: lv.price,
+        color: "rgba(63,182,255,0.55)",
+        lineWidth: 1,
+        lineStyle: LineStyle.Dotted,
+        axisLabelVisible: true,
+        title: lv.label,
+      });
+      linesRef.current.push(line);
+    });
+  }, [clusters, spot, levels]);
 
   return <div ref={elRef} className="h-[380px] w-full sm:h-[440px]" />;
 }

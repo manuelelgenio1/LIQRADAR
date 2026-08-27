@@ -50,6 +50,7 @@ export interface MarketData {
   bookImbalance: number; // ratio bid/ask del libro (≈1)
   xCfundingGap: number; // funding Binance − media(OKX+Bybit)
   candles: Candle[];
+  daily: Candle[];
   oiHistory: OIPoint[];
   liqEvents: LiqEvent[];
   sessionLong: number;
@@ -73,6 +74,7 @@ export function useMarket(tf: Timeframe): MarketData {
   const [bookImbalance, setBookImbalance] = useState(1);
   const [xCfundingGap, setXCfundingGap] = useState(0);
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [daily, setDaily] = useState<Candle[]>([]);
   const [oiHistory, setOiHistory] = useState<OIPoint[]>([]);
   const [liqEvents, setLiqEvents] = useState<LiqEvent[]>([]);
   const [session, setSession] = useState({ long: 0, short: 0 });
@@ -114,6 +116,21 @@ export function useMarket(tf: Timeframe): MarketData {
       clearInterval(id);
     };
   }, [cfg.interval, cfg.limit, cfg.ms]);
+
+  /* ---------- velas diarias (niveles clave: apertura diaria/semanal, máx/mín día anterior) ---------- */
+  useEffect(() => {
+    let alive = true;
+    fetchKlines("1d", 9)
+      .then((d) => {
+        if (alive && d.length > 0) setDaily(d);
+      })
+      .catch(() => {
+        /* los niveles son opcionales si no hay red */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   /* ---------- métricas REST ---------- */
   useEffect(() => {
@@ -310,6 +327,7 @@ export function useMarket(tf: Timeframe): MarketData {
     bookImbalance,
     xCfundingGap,
     candles,
+    daily,
     oiHistory,
     liqEvents,
     sessionLong: session.long,

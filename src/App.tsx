@@ -13,6 +13,8 @@ import {
 } from "./lib/history";
 import { TopBar } from "./components/TopBar";
 import { PriceChart } from "./components/PriceChart";
+import { KeyLevelsPanel } from "./components/KeyLevelsPanel";
+import { computeKeyLevels } from "./lib/levels";
 import { LiquidationMap } from "./components/LiquidationMap";
 import { PredictionPanel } from "./components/PredictionPanel";
 import { FeedPanel } from "./components/FeedPanel";
@@ -31,9 +33,11 @@ import { MarketPulsePanel } from "./components/MarketPulsePanel";
 import { BenchmarkPanel } from "./components/BenchmarkPanel";
 import { ConfluencePanel } from "./components/ConfluencePanel";
 import { ExchangeRadarPanel } from "./components/ExchangeRadarPanel";
-import { AlertCenter, type SniperCfg } from "./components/AlertCenter";
+import { AlertCenter, type SniperCfg, type PriceLevel } from "./components/AlertCenter";
 import { SniperToast, type SniperInfo } from "./components/SniperToast";
+import { LevelToast, type LevelHit } from "./components/LevelToast";
 import { RiskPanel } from "./components/RiskPanel";
+import { Journal } from "./components/Journal";
 import { loadCalibration, loadHitRate, saveHitRate, type Calibration } from "./lib/calibration";
 import { OrderBookPanel } from "./components/OrderBookPanel";
 
@@ -96,6 +100,12 @@ export default function App() {
     setHitRate({ hitRate: hr, samples });
     saveHitRate(hr, samples);
   };
+
+  // niveles clave de estructura (objetivos, derivados de velas diarias + visibles)
+  const keyLevels = useMemo(
+    () => computeKeyLevels(market.daily, market.candles, market.spot),
+    [market.daily, market.candles, market.spot]
+  );
 
   const analysis = useMemo(() => {
     if (market.candles.length === 0) return null;
@@ -306,6 +316,55 @@ export default function App() {
   const [lastFire, setLastFire] = useState<number | null>(null);
   const lastSniperRef = useRef(0);
 
+  /* ---------- alertas por nivel de precio ---------- */
+  const [priceLevels, setPriceLevels] = useState<PriceLevel[]>(() => {
+    try {
+      const raw = localStorage.getItem("liqradar-levels-v1");
+      if (raw) return JSON.parse(raw) as PriceLevel[];
+    } catch {
+      /* noop */
+    }
+    return [];
+  });
+  const [levelHit, setLevelHit] = useState<LevelHit | null>(null);
+  useEffect(() => {
+    try {
+      localStorage.setItem("liqradar-levels-v1", JSON.stringify(priceLevels));
+    } catch {
+      /* noop */
+    }
+  }, [priceLevels]);
+
+  const addLevel = (price: number) => {
+    setPriceLevels((ls) => [
+      ...ls.filter((l) => Math.abs(l.price - price) / price > 0.0005),
+      { id: `${Date.now()}-${Math.round(price)}`, price, side: price >= market.spot ? "arriba" : "abajo", fired: false, createdAt: Date.now() },
+    ]);
+  };
+  const removeLevel = (id: string) => setPriceLevels((ls) => ls.filter((l) => l.id !== id));
+
+  useEffect(() => {
+    const spot = market.spot;
+    if (!Number.isFinite(spot) || spot <= 0) return;
+    for (const l of priceLevels) {
+      if (l.fired) continue;
+      const hit = (l.side === "arriba" && spot >= l.price) || (l.side === "abajo" && spot <= l.price);
+      if (hit) {
+        setPriceLevels((ls) => ls.map((x) => (x.id === l.id ? { ...x, fired: true } : x)));
+        setLevelHit({ id: l.id, price: l.price, side: l.side, spot });
+        setLastFire(Date.now());
+        if (soundOn) playMagnet();
+        sendWebhook("nivel_precio", {
+          nivel: l.price,
+          lado: l.side,
+          spot,
+          mensaje: `BTC ${l.side === "arriba" ? "superó" : "perdió"} el nivel $${Math.round(l.price).toLocaleString("en-US")}`,
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market.spot, priceLevels, soundOn]);
+
   useEffect(() => {
     if (!analysis || !sniper.on) return;
     const v = analysis.verdict;
@@ -381,6 +440,8 @@ export default function App() {
   const r12 = useReveal();
   const r13 = useReveal();
   const r14 = useReveal();
+  const r15 = useReveal();
+  const r16 = useReveal();
 
   return (
     <div className="relative min-h-screen font-body">
@@ -389,6 +450,7 @@ export default function App() {
 
       <FlipAlert flip={flip} onDismiss={() => setFlip(null)} />
       <SniperToast s={sniperAlert} onDismiss={() => setSniperAlert(null)} />
+      <LevelToast hit={levelHit} onDismiss={() => setLevelHit(null)} />
 
       <div className="relative z-10">
         <TopBar m={market} soundOn={soundOn} onToggleSound={toggleSound} />
@@ -438,6 +500,10 @@ export default function App() {
               onWebhook={setWebhook}
               onTest={testAlerts}
               lastFire={lastFire}
+              spot={market.spot}
+              levels={priceLevels}
+              onAddLevel={addLevel}
+              onRemoveLevel={removeLevel}
             />
           </section>
 
@@ -467,12 +533,17 @@ export default function App() {
                     clusters={analysis?.clusters ?? []}
                     spot={market.spot}
                     oiHistory={market.oiHistory}
+                    levels={keyLevels.filter((l) => ["PDH", "PDL", "DO", "WO"].includes(l.short)).map((l) => ({ price: l.price, label: l.label }))}
                   />
                 ) : (
                   <div className="flex h-[340px] animate-pulse items-center justify-center rounded-md border border-line/50 font-mono text-xs text-dusk sm:h-[400px]">
                     CARGANDO VELAS…
                   </div>
                 )}
+              </section>
+
+              <section className="panel reveal" ref={r15}>
+                <KeyLevelsPanel levels={keyLevels} spot={market.spot} />
               </section>
 
               <section className="panel reveal" ref={r1}>
@@ -555,6 +626,11 @@ export default function App() {
               invalidation={analysis?.verdict.invalidation?.price ?? null}
               direction={analysis?.verdict.direction ?? "neutral"}
             />
+          </section>
+
+          {/* diario de trading */}
+          <section className="panel reveal mt-5" ref={r16}>
+            <Journal spot={market.spot} verdict={analysis?.verdict ?? null} />
           </section>
 
           {/* acumulación + track record */}
