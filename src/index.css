@@ -231,6 +231,15 @@ body {
 
 ::selection { background: rgba(47, 214, 165, 0.3); }
 
+/* ---------- navegación por zonas ---------- */
+html {
+  scroll-behavior: smooth;
+}
+
+.zone-scroll {
+  scroll-margin-top: 58px;
+}
+
 /* ---------- accesibilidad: menos movimiento ---------- */
 @media (prefers-reduced-motion: reduce) {
   .scanline,

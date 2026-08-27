@@ -70,9 +70,14 @@ export function LiquidationMap({ bins, clusters, spot, longPool, shortPool, tf, 
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <div className="flex gap-1.5">
+          <div className="flex flex-wrap justify-end gap-1.5">
             {(Object.keys(TF_CONFIG) as Timeframe[]).map((t) => (
-              <button key={t} className={`chip ${tf === t ? "on" : ""}`} onClick={() => onTf(t)}>
+              <button
+                key={t}
+                title={`${TF_CONFIG[t].label} · ${TF_CONFIG[t].desc} · velas de ${TF_CONFIG[t].interval}`}
+                className={`chip ${tf === t ? "on" : ""}`}
+                onClick={() => onTf(t)}
+              >
                 {TF_CONFIG[t].label}
               </button>
             ))}

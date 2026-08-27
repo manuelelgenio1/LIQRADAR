@@ -19,13 +19,18 @@ import {
 } from "../lib/binance";
 import { fetchBybit, fetchOkx } from "../lib/exchanges";
 
-export type Timeframe = "12h" | "24h" | "72h" | "7d";
+export type Timeframe = "6h" | "12h" | "24h" | "72h" | "7d" | "14d";
 
-export const TF_CONFIG: Record<Timeframe, { interval: string; limit: number; ms: number; range: number; label: string }> = {
-  "12h": { interval: "15m", limit: 48, ms: 900_000, range: 0.022, label: "12H" },
-  "24h": { interval: "30m", limit: 48, ms: 1_800_000, range: 0.035, label: "24H" },
-  "72h": { interval: "1h", limit: 72, ms: 3_600_000, range: 0.062, label: "72H" },
-  "7d": { interval: "4h", limit: 42, ms: 14_400_000, range: 0.115, label: "7D" },
+export const TF_CONFIG: Record<
+  Timeframe,
+  { interval: string; limit: number; ms: number; range: number; label: string; lookback: number; desc: string }
+> = {
+  "6h": { interval: "15m", limit: 24, ms: 900_000, range: 0.016, label: "6H", lookback: 12, desc: "scalping" },
+  "12h": { interval: "15m", limit: 48, ms: 900_000, range: 0.022, label: "12H", lookback: 16, desc: "intradía" },
+  "24h": { interval: "30m", limit: 48, ms: 1_800_000, range: 0.035, label: "24H", lookback: 20, desc: "diario" },
+  "72h": { interval: "1h", limit: 72, ms: 3_600_000, range: 0.062, label: "72H", lookback: 24, desc: "swing corto" },
+  "7d": { interval: "4h", limit: 42, ms: 14_400_000, range: 0.115, label: "7D", lookback: 18, desc: "swing" },
+  "14d": { interval: "2h", limit: 168, ms: 7_200_000, range: 0.13, label: "14D", lookback: 24, desc: "posición" },
 };
 
 export interface MarketData {
