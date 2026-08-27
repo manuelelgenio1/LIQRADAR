@@ -18,11 +18,42 @@ function useCountdownLabel(nextFundingTime: number): string {
   return label;
 }
 
+/* mini-sparkline del precio en vivo (últimos ticks de la sesión) */
+function PriceSpark({ data }: { data: number[] }) {
+  if (data.length < 2) return null;
+  const W = 96;
+  const H = 30;
+  const P = 2.5;
+  const lo = Math.min(...data);
+  const hi = Math.max(...data);
+  const span = hi - lo || 1;
+  const x = (i: number) => P + (i / (data.length - 1)) * (W - P * 2);
+  const y = (v: number) => H - P - ((v - lo) / span) * (H - P * 2);
+  const pts = data.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const trendUp = data[data.length - 1] >= data[0];
+  const c = trendUp ? "#2fd6a5" : "#ff4d6d";
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden>
+      <polyline points={pts} fill="none" stroke={c} strokeWidth="1.4" strokeLinejoin="round" strokeLinecap="round" opacity="0.9" />
+      <circle cx={x(data.length - 1)} cy={y(data[data.length - 1])} r="2.2" fill={c}>
+        <animate attributeName="opacity" values="1;0.3;1" dur="1.6s" repeatCount="indefinite" />
+      </circle>
+    </svg>
+  );
+}
+
 export function TopBar({ m, soundOn, onToggleSound }: { m: MarketData; soundOn: boolean; onToggleSound: () => void }) {
   const up = m.dir >= 0;
   const fundingLabel = useCountdownLabel(m.nextFundingTime);
   const sim = m.sources.klines === "sim" && m.sources.metrics === "sim";
   const partial = !sim && (m.sources.price === "sim" || m.sources.liq === "sim");
+
+  // historial de ticks para el sparkline
+  const [hist, setHist] = useState<number[]>([]);
+  useEffect(() => {
+    if (!Number.isFinite(m.spot) || m.spot <= 0) return;
+    setHist((h) => [...h.slice(-59), m.spot]);
+  }, [m.tickId, m.spot]);
 
   return (
     <header className="relative z-10 border-b border-line/70 bg-ink-900/70 backdrop-blur-sm">
@@ -43,7 +74,7 @@ export function TopBar({ m, soundOn, onToggleSound }: { m: MarketData; soundOn: 
         </div>
 
         {/* precio en vivo */}
-        <div className="flex items-baseline gap-3">
+        <div className="flex items-center gap-3">
           <span className="panel-tag">BTC/USDT</span>
           <span
             key={m.tickId}
@@ -58,6 +89,9 @@ export function TopBar({ m, soundOn, onToggleSound }: { m: MarketData; soundOn: 
           >
             {m.change24h >= 0 ? "▲" : "▼"} {Math.abs(m.change24h).toFixed(2)}% 24h
           </span>
+          <div className="hidden md:block" title={`Últimos ${hist.length} ticks del precio`}>
+            <PriceSpark data={hist} />
+          </div>
         </div>
 
         {/* métricas rápidas */}

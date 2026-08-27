@@ -62,6 +62,23 @@ export function RumboGauge({ v, spot, history = [], magnetClose = false, magnetP
     );
   }
 
+  // etiquetas numéricas de escala (−100 … +100)
+  const scaleLabels = [-100, -50, 0, 50, 100].map((p) => {
+    const rad = ((p / 100) * 84 * Math.PI) / 180;
+    const x = 150 + 96 * Math.sin(rad);
+    const y = 150 - 96 * Math.cos(rad);
+    return { p, x, y };
+  });
+
+  // arco de sesgo: del cero hasta la posición de la aguja (magnitud del rumbo)
+  const rad = (angle * Math.PI) / 180;
+  const ax = 150 + 120 * Math.sin(rad);
+  const ay = 150 - 120 * Math.cos(rad);
+  const biasArc =
+    Math.abs(angle) < 1.5
+      ? ""
+      : `M 150 30 A 120 120 0 0 ${angle > 0 ? 1 : 0} ${ax.toFixed(1)} ${ay.toFixed(1)}`;
+
   return (
     <div className="panel relative overflow-hidden p-5">
       <div className="pointer-events-none absolute inset-0" style={{ background: `radial-gradient(620px 260px at 18% 100%, ${color}14, transparent 70%)` }} />
@@ -94,18 +111,44 @@ export function RumboGauge({ v, spot, history = [], magnetClose = false, magnetP
             {/* arco base */}
             <path d="M 30 150 A 120 120 0 0 1 270 150" fill="none" stroke="rgba(21,35,60,0.9)" strokeWidth="16" strokeLinecap="round" />
             {/* arco coloreado */}
-            <path d="M 30 150 A 120 120 0 0 1 270 150" fill="none" stroke="url(#rumboArc)" strokeWidth="10" strokeLinecap="round" opacity="0.9" />
+            <path d="M 30 150 A 120 120 0 0 1 270 150" fill="none" stroke="url(#rumboArc)" strokeWidth="10" strokeLinecap="round" opacity="0.35" />
+            {/* arco de sesgo activo (cero → aguja), brilla con la magnitud del rumbo */}
+            {biasArc && (
+              <path
+                d={biasArc}
+                fill="none"
+                stroke={color}
+                strokeWidth="10"
+                strokeLinecap="round"
+                style={{ filter: `drop-shadow(0 0 8px ${color})`, transition: "d 0.9s cubic-bezier(.2,.8,.25,1), stroke 0.4s" }}
+              />
+            )}
             {ticks}
+
+            {/* escala numérica */}
+            {scaleLabels.map(({ p, x, y }) => (
+              <text
+                key={p}
+                x={x}
+                y={y + 3}
+                textAnchor="middle"
+                className="font-mono text-[8.5px]"
+                fill={p === 0 ? "#ffb547" : "#5d7099"}
+                fontWeight={p === 0 ? 700 : 400}
+              >
+                {p > 0 ? `+${p}` : p}
+              </text>
+            ))}
 
             {/* etiquetas SHORT / LONG */}
             <text x="26" y="172" textAnchor="middle" className="fill-[#ff7d95] font-mono text-[12px] font-700">SHORT</text>
             <text x="274" y="172" textAnchor="middle" className="fill-[#5ef2c4] font-mono text-[12px] font-700">LONG</text>
-            <text x="150" y="20" textAnchor="middle" className="fill-[#5d7099] font-mono text-[9px] tracking-widest">0</text>
 
-            {/* aguja */}
+            {/* aguja con contrapeso */}
             <g style={{ transform: `rotate(${angle}deg)`, transformOrigin: "150px 150px", transition: "transform 0.9s cubic-bezier(.2,.8,.25,1)" }}>
-              <polygon points="150,52 145,150 155,150" fill={color} style={{ filter: `drop-shadow(0 0 7px ${color})` }} />
-              <circle cx="150" cy="52" r="4.5" fill={color} style={{ filter: `drop-shadow(0 0 9px ${color})` }} />
+              <line x1="150" y1="150" x2="150" y2="167" stroke={color} strokeWidth="4" strokeLinecap="round" opacity="0.45" />
+              <polygon points="150,50 144.5,150 155.5,150" fill={color} style={{ filter: `drop-shadow(0 0 7px ${color})` }} />
+              <circle cx="150" cy="50" r="4.5" fill={color} style={{ filter: `drop-shadow(0 0 9px ${color})` }} />
             </g>
             {/* pivote */}
             <circle cx="150" cy="150" r="9" fill="#0d1a30" stroke={color} strokeWidth="2.5" />
