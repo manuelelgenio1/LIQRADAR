@@ -14,12 +14,26 @@ export interface Candle {
   takerBuyQuote?: number; // USDT de compra agresiva (taker)
 }
 
+export interface LevPart {
+  lev: number;
+  v: number; // intensidad relativa 0..1 sobre el máximo global
+}
+
 export interface LiqBin {
   price: number;
   intensity: number; // 0..1
   side: "long" | "short";
   estNotional: number; // USDT estimados
+  parts: LevPart[]; // contribución por apalancamiento
 }
+
+/* Colores por apalancamiento: frío (10×) → explosivo (100×) */
+export const LEV_COLORS: Record<number, string> = {
+  10: "#3fb6ff",
+  25: "#2fd6d6",
+  50: "#ffb547",
+  100: "#e05cd0",
+};
 
 export interface Cluster {
   price: number;
@@ -161,7 +175,11 @@ export function estimateLiquidationMap(
   const totalQuote = candles.reduce((a, c) => a + c.quoteVolume, 0) || 1;
   const levWeight: Record<number, number> = { 10: 1, 25: 0.85, 50: 0.68, 100: 0.5 };
 
-  const add = (price: number, w: number) => {
+  // acumulación por apalancamiento (para colorear cada uno distinto)
+  const rawLev: Record<number, Float64Array> = {};
+  for (const L of leverages) rawLev[L] = new Float64Array(binsCount);
+
+  const add = (price: number, w: number, L: number) => {
     const idx = (hi - price) / step;
     const i0 = Math.floor(idx);
     for (let o = -1; o <= 1; o++) {
@@ -169,6 +187,7 @@ export function estimateLiquidationMap(
       if (i < 0 || i >= binsCount) continue;
       const k = o === 0 ? 1 : 0.42;
       raw[i] += w * k;
+      rawLev[L][i] += w * k;
     }
   };
 
@@ -181,22 +200,28 @@ export function estimateLiquidationMap(
       const d = liqDistance(L);
       const lw = levWeight[L] ?? 0.7;
       // longs abiertos cerca de máximos/cierre → liquidación debajo
-      add(c.high * (1 - d), base * 0.9 * lw);
-      add(c.close * (1 - d), base * 0.45 * lw);
+      add(c.high * (1 - d), base * 0.9 * lw, L);
+      add(c.close * (1 - d), base * 0.45 * lw, L);
       // shorts abiertos cerca de mínimos/cierre → liquidación arriba
-      add(c.low * (1 + d), base * 0.9 * lw);
-      add(c.close * (1 + d), base * 0.45 * lw);
+      add(c.low * (1 + d), base * 0.9 * lw, L);
+      add(c.close * (1 + d), base * 0.45 * lw, L);
     }
   });
 
-  // suavizado
-  const smooth = new Float64Array(binsCount);
-  for (let i = 0; i < binsCount; i++) {
-    const a = raw[Math.max(0, i - 1)];
-    const b = raw[i];
-    const c = raw[Math.min(binsCount - 1, i + 1)];
-    smooth[i] = (a + 2 * b + c) / 4;
-  }
+  // suavizado (mismo kernel para el total y para cada apalancamiento)
+  const smoothArr = (src: Float64Array): Float64Array => {
+    const out = new Float64Array(binsCount);
+    for (let i = 0; i < binsCount; i++) {
+      const a = src[Math.max(0, i - 1)];
+      const b = src[i];
+      const c = src[Math.min(binsCount - 1, i + 1)];
+      out[i] = (a + 2 * b + c) / 4;
+    }
+    return out;
+  };
+  const smooth = smoothArr(raw);
+  const smoothLev: Record<number, Float64Array> = {};
+  for (const L of leverages) smoothLev[L] = smoothArr(rawLev[L]);
   const max = Math.max(...Array.from(smooth), 1e-9);
 
   // anclaje nocional: si conocemos el OI, repartimos una fracción liquidable
@@ -221,7 +246,12 @@ export function estimateLiquidationMap(
       shortPool += estNotional;
       if (near) nearShortPool += estNotional;
     }
-    bins.push({ price, intensity: smooth[i] / max, side, estNotional });
+    const parts: LevPart[] = [];
+    for (const L of leverages) {
+      const v = smoothLev[L][i] / max;
+      if (v > 0.004) parts.push({ lev: L, v });
+    }
+    bins.push({ price, intensity: smooth[i] / max, side, estNotional, parts });
   }
 
   // detección de concentraciones (picos locales)
