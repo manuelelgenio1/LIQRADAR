@@ -102,6 +102,47 @@ export async function fetchOIHistory(interval: string, limit: number): Promise<O
   return r.map((x) => ({ time: Math.floor(Number(x.timestamp) / 1000), oi: Number(x.sumOpenInterest) }));
 }
 
+export interface SeriesPoint {
+  time: number; // unix seconds
+  value: number;
+}
+
+/* Historial del funding rate (~30 días, 1 punto cada 8h) */
+export async function fetchFundingSeries(limit = 90): Promise<SeriesPoint[]> {
+  const r = await getJson<{ fundingRate: string; fundingTime: number }[]>(
+    `${FUT}/fapi/v1/fundingRate?symbol=BTCUSDT&limit=${limit}`
+  );
+  return r.map((x) => ({ time: Math.floor(Number(x.fundingTime) / 1000), value: Number(x.fundingRate) }));
+}
+
+/* Historial del ratio long/short de cuentas (period: 1h/4h/1d) */
+export async function fetchAccountRatioSeries(period: string, limit: number): Promise<SeriesPoint[]> {
+  const r = await getJson<{ longShortRatio: string; timestamp: number }[]>(
+    `${FUT}/futures/data/globalLongShortAccountRatio?symbol=BTCUSDT&period=${period}&limit=${limit}`
+  );
+  return r.map((x) => ({ time: Math.floor(Number(x.timestamp) / 1000), value: Number(x.longShortRatio) }));
+}
+
+/* Historial del ratio de volumen taker compra/venta */
+export async function fetchTakerSeries(period: string, limit: number): Promise<SeriesPoint[]> {
+  const r = await getJson<{ buySellRatio: string; timestamp: number }[]>(
+    `${FUT}/futures/data/takerlongshortRatio?symbol=BTCUSDT&period=${period}&limit=${limit}`
+  );
+  return r.map((x) => ({ time: Math.floor(Number(x.timestamp) / 1000), value: Number(x.buySellRatio) }));
+}
+
+/* Simuladores coherentes para red restringida */
+export function simSeries(base: number, vol: number, count: number, stepMs: number): SeriesPoint[] {
+  const now = Date.now();
+  let v = base;
+  const out: SeriesPoint[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    v = v * (1 + (rnd() - 0.5) * vol) + base * (rnd() - 0.5) * vol * 0.15;
+    out.push({ time: Math.floor((now - i * stepMs) / 1000), value: v });
+  }
+  return out;
+}
+
 export async function fetchOpenInterest(): Promise<{ oi: number; change24hPct: number }> {
   const [oi, hist] = await Promise.all([
     getJson<{ openInterest: string }>(`${FUT}/fapi/v1/openInterest?symbol=BTCUSDT`),

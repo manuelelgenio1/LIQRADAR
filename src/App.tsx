@@ -22,6 +22,8 @@ import { RumboGauge } from "./components/RumboGauge";
 import { LiqHeatmap } from "./components/LiqHeatmap";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { FlipAlert, type FlipInfo } from "./components/FlipAlert";
+import { MarketPulsePanel } from "./components/MarketPulsePanel";
+import { BenchmarkPanel } from "./components/BenchmarkPanel";
 
 const STEPS = [
   {
@@ -165,6 +167,8 @@ export default function App() {
   const r4 = useReveal();
   const r5 = useReveal();
   const r6 = useReveal();
+  const r7 = useReveal();
+  const r8 = useReveal();
 
   return (
     <div className="relative min-h-screen font-body">
@@ -272,6 +276,11 @@ export default function App() {
             )}
           </section>
 
+          {/* pulso del mercado */}
+          <section className="panel reveal mt-5" ref={r7}>
+            <MarketPulsePanel />
+          </section>
+
           {/* acumulación + track record */}
           <div className="reveal mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_1fr]" ref={r3}>
             <section className="panel">
@@ -311,6 +320,11 @@ export default function App() {
               preds={preds}
               flips={flipCount}
             />
+          </section>
+
+          {/* benchmark competitivo */}
+          <section className="panel reveal mt-5" ref={r8}>
+            <BenchmarkPanel />
           </section>
 
           {/* método + disclaimer */}

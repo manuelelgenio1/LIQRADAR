@@ -19,7 +19,7 @@ export function TrackRecord({ preds, spot }: { preds: Prediction[]; spot: number
     <div className="flex h-full flex-col p-5">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="panel-tag">06 · historial del modelo</div>
+          <div className="panel-tag">07 · historial del modelo</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog">¿Cuánto acierta el radar?</h2>
         </div>
         <button
