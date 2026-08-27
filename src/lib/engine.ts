@@ -78,6 +78,7 @@ export interface Verdict {
   factors: Factor[];
   cascade: Cluster[]; // clusters dentro de 1 ATR (riesgo de liquidación en cadena)
   warnings: Warning[];
+  regime: RegimeInfo; // régimen de volatilidad actual
 }
 
 export interface VerdictInput {
@@ -304,6 +305,67 @@ export function atrOf(candles: Candle[]): number {
     sum += Math.max(c.high - c.low, Math.abs(c.high - prev.close), Math.abs(c.low - prev.close));
   }
   return sum / k;
+}
+
+/* ------------------------------------------------------------
+   Régimen de volatilidad (ATR como % del precio por hora).
+   Clasifica el mercado para ajustar ventana temporal y confianza.
+   ------------------------------------------------------------ */
+export type Regime = "calm" | "normal" | "high" | "extreme";
+
+export interface RegimeInfo {
+  regime: Regime;
+  atrPct: number; // ATR/h como % del spot
+  label: string;
+  color: string;
+  windowScale: number; // multiplicador de la ventana temporal (alta vol = señales más rápidas)
+  confAdj: number; // ajuste adicional de confianza
+  note: string;
+}
+
+export function classifyRegime(atrPct: number): RegimeInfo {
+  if (atrPct < 0.15) {
+    return {
+      regime: "calm",
+      atrPct,
+      label: "CALMA",
+      color: "#3fb6ff",
+      windowScale: 1.5,
+      confAdj: 0,
+      note: "Baja volatilidad: los sweeps tardan más en materializarse; amplía la ventana y ten paciencia.",
+    };
+  }
+  if (atrPct < 0.45) {
+    return {
+      regime: "normal",
+      atrPct,
+      label: "NORMAL",
+      color: "#2fd6a5",
+      windowScale: 1,
+      confAdj: 0,
+      note: "Volatilidad estándar: la ventana temporal del radar aplica tal cual.",
+    };
+  }
+  if (atrPct < 0.9) {
+    return {
+      regime: "high",
+      atrPct,
+      label: "ALTA",
+      color: "#ffb547",
+      windowScale: 0.6,
+      confAdj: -6,
+      note: "Volatilidad alta: las barridas son rápidas y violentas; ventana acortada y confianza penalizada.",
+    };
+  }
+  return {
+    regime: "extreme",
+    atrPct,
+    label: "EXTREMA",
+    color: "#ff4d6d",
+    windowScale: 0.4,
+    confAdj: -12,
+    note: "Volatilidad extrema: el ruido domina; reduce tamaño, amplía stops y desconfía de señales aisladas.",
+  };
 }
 
 /* ------------------------------------------------------------
@@ -672,13 +734,15 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   const align = factors.filter((f) => (direction === "neutral" ? false : Math.sign(f.score) === Math.sign(score))).length;
 
   // confianza: base + magnitud del sesgo + alineación de factores,
-  // penalizada por volatilidad extrema (régimen ATR alto = menos certeza)
+  // ajustada por el régimen de volatilidad (alta vol = menos certeza)
   const atrPct = inp.spot > 0 ? (inp.atr1h / inp.spot) * 100 : 0;
+  const regime = classifyRegime(atrPct);
   const volPenalty = Math.min(16, Math.max(0, (atrPct - 0.45) * 40));
+  const volAdj = Math.max(volPenalty, Math.abs(regime.confAdj)); // evita doble-penalizar
   const mtfBonus = aligned ? 5 : 0;
-  const confidence = Math.max(15, Math.round(Math.min(93, 24 + Math.abs(score) * 62 + align * 5 + mtfBonus) - volPenalty));
-  if (volPenalty >= 10) {
-    warnings.push({ tone: "warn", text: `Volatilidad elevada (ATR ${atrPct.toFixed(2)}%/h): confianza reducida, las barridas son más violentas e impredecibles` });
+  const confidence = Math.max(15, Math.round(Math.min(93, 24 + Math.abs(score) * 62 + align * 5 + mtfBonus) - volAdj));
+  if (regime.regime === "high" || regime.regime === "extreme") {
+    warnings.push({ tone: regime.regime === "extreme" ? "danger" : "warn", text: `Régimen de volatilidad ${regime.label} (ATR ${atrPct.toFixed(2)}%/h): ${regime.note}` });
   }
 
   const target = direction === "up" ? shorts[0] ?? null : direction === "down" ? longs[0] ?? null : null;
@@ -701,10 +765,13 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     });
   }
 
+  // ventana temporal: escalada por el régimen de volatilidad
+  // (alta vol → los sweeps se resuelven más rápido → ventana más corta)
   let windowH: [number, number] = [2, 12];
   if (target && inp.atr1h > 0) {
     const h = Math.abs(target.price - inp.spot) / inp.atr1h;
-    windowH = [Math.max(1, Math.round(h * 0.5)), Math.min(96, Math.max(2, Math.round(h * 1.7)))];
+    const ws = regime.windowScale;
+    windowH = [Math.max(1, Math.round(h * 0.5 * ws)), Math.min(96, Math.max(2, Math.round(h * 1.7 * ws)))];
   }
 
   let headline = "RANGO · SIN SESGO";
@@ -721,7 +788,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
       : "Presión bajista dominante, aunque sin un cluster grande cercano definido.";
   }
 
-  return { direction, headline, sub, scorePct, confidence, target, invalidation, windowH, factors, cascade, warnings };
+  return { direction, headline, sub, scorePct, confidence, target, invalidation, windowH, factors, cascade, warnings, regime };
 }
 
 /* ------------------------------------------------------------

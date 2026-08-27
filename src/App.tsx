@@ -20,6 +20,7 @@ import { AccumulationPanel } from "./components/AccumulationPanel";
 import { TrackRecord } from "./components/TrackRecord";
 import { BacktestLab } from "./components/BacktestLab";
 import { RumboGauge } from "./components/RumboGauge";
+import { RegimeBadge } from "./components/RegimeBadge";
 import { LiqHeatmap } from "./components/LiqHeatmap";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { FlipAlert, type FlipInfo } from "./components/FlipAlert";
@@ -378,6 +379,7 @@ export default function App() {
   const r11 = useReveal();
   const r12 = useReveal();
   const r13 = useReveal();
+  const r14 = useReveal();
 
   return (
     <div className="relative min-h-screen font-body">
@@ -405,6 +407,17 @@ export default function App() {
             ) : (
               <div className="panel flex h-40 animate-pulse items-center justify-center font-mono text-xs text-dusk">
                 FIJANDO RUMBO…
+              </div>
+            )}
+          </section>
+
+          {/* régimen de volatilidad */}
+          <section className="reveal mb-5" ref={r14}>
+            {analysis ? (
+              <RegimeBadge regime={analysis.verdict.regime} />
+            ) : (
+              <div className="flex h-14 animate-pulse items-center justify-center rounded-lg border border-line/50 font-mono text-xs text-dusk">
+                MIDIENDO VOLATILIDAD…
               </div>
             )}
           </section>
