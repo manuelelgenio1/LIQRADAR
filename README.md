@@ -19,6 +19,16 @@ Lo único que necesitas instalado es **Node.js** (una sola vez, desde <https://n
 
 Cuando aparezca `➜ Local: http://localhost:5173/`, el navegador se abrirá solo. **Para apagar el radar: cierra la ventana negra.**
 
+### 🛡️ Modo "a prueba de fallos" (sin npm)
+
+Los lanzadores incluyen un **plan B automático**: si `npm install` falla (por ejemplo, sin internet o con npm bloqueado), detectan la carpeta `dist/` ya compilada y arrancan un **servidor estático de cero dependencias** (`server.mjs`, solo necesita Node.js). En ese caso el radar abre en `http://localhost:4173`. Tú no tienes que hacer nada: el script elige solo el mejor modo disponible.
+
+También puedes lanzar ese modo manualmente:
+
+```bash
+node server.mjs     # sirve la carpeta dist/ en http://localhost:4173
+```
+
 ### 🪂 Aún más fácil: úsalo sin instalar NADA (Netlify Drop)
 
 Si no quieres tocar tu PC:
