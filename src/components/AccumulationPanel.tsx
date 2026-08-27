@@ -173,18 +173,18 @@ export function AccumulationPanel(p: Props) {
         {/* CVD */}
         <div className="rounded-lg border border-line/70 bg-ink-950/50 p-4 transition-transform duration-200 hover:-translate-y-0.5">
           <span className="panel-tag">delta de takers (CVD)</span>
-          <div className={`mt-2 font-mono text-xl font-700 tabular-nums ${p.cvdPct >= 0 ? "text-long" : "text-short"}`}>
+          <div className={`mt-2 font-mono text-xl font-700 tabular-nums ${p.cvdPct >= 0 ? "text-short" : "text-long"}`}>
             {p.cvdPct >= 0 ? "+" : ""}
             {(p.cvdPct * 100).toFixed(1)}%
             <span className="ml-2 text-[11px] font-500 text-dusk">del volumen</span>
           </div>
           <div className="mt-1 font-mono text-[10.5px] tabular-nums text-dusk">{fmtCompact(p.cvdNet)} USDT netos</div>
-          <CvdSpark series={p.cvdSeries} positive={p.cvdPct >= 0} />
+          <CvdSpark series={p.cvdSeries} positive={p.cvdPct < 0} />
           <p className="mt-1.5 text-[11px] leading-snug text-dusk">
             {p.cvdPct > 0.02
-              ? "Compra agresiva dominante: se apilan longs a mercado."
+              ? "Compra agresiva: se apilan longs a mercado → combustible para un long squeeze (presión bajista)."
               : p.cvdPct < -0.02
-                ? "Venta agresiva dominante: se apilan shorts a mercado."
+                ? "Venta agresiva: se apilan shorts a mercado → combustible para un short squeeze (presión alcista)."
                 : "Flujo comprador/vendedor equilibrado en la ventana."}
           </p>
         </div>

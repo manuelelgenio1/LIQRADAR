@@ -195,7 +195,7 @@ export function LiqHeatmap({ candles, leverages, lookback, label }: Props) {
     <div className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="panel-tag">04 · heatmap de liquidación · {label}</div>
+          <div className="panel-tag">M6 · heatmap de liquidación · {label}</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
             Mapa de calor en el tiempo
           </h2>

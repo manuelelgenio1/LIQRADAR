@@ -58,7 +58,7 @@ export function LiquidationMap({ bins, clusters, spot, longPool, shortPool, tf, 
       {/* cabecera */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="panel-tag">02 · mapa de calor</div>
+          <div className="panel-tag">M3 · mapa de calor</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
             ¿Dónde se acumula la liquidación?
           </h2>

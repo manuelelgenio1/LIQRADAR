@@ -59,6 +59,7 @@ export interface Factor {
   detail: string;
   score: number; // -1..1  (negativo = long squeeze / bajista)
   weight: number;
+  school?: "contrarian" | "momentum"; // escuela a la que pertenece
 }
 
 export interface Warning {
@@ -70,7 +71,12 @@ export interface Verdict {
   direction: "up" | "down" | "neutral";
   headline: string;
   sub: string;
-  scorePct: number; // -100..100
+  narrative: string; // historia armonizada: qué dice cada escuela y por qué manda una
+  scorePct: number; // -100..100 (mezcla final)
+  contrarianPct: number; // voto de la escuela contrarian (caza de liquidaciones)
+  momentumPct: number; // voto de la escuela de impulso (tendencia/flujo)
+  gatePct: number; // peso de la fase de caza en la mezcla (40–85%)
+  harmony: number; // 0..100 — acuerdo entre las dos escuelas
   confidence: number; // 0..100
   target: Cluster | null;
   invalidation: Cluster | null;
@@ -723,24 +729,70 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     }
   }
 
-  const wSum = factors.reduce((a, f) => a + f.weight, 0);
-  const score = factors.reduce((a, f) => a + f.score * f.weight, 0) / wSum;
+  /* ---------- armonización de las dos escuelas ----------
+     CONTRARIAN (caza de liquidaciones): donde está la multitud, ocurre lo contrario.
+     MOMENTUM (tendencia/flujo): sigue el flujo del dinero.
+     La compuerta de "fase de caza" decide cuánto pesa cada escuela según el régimen. */
+  const SCHOOL_OF: Record<string, "contrarian" | "momentum"> = {
+    funding: "contrarian",
+    fundingTrend: "contrarian",
+    global: "contrarian",
+    top: "contrarian",
+    pools: "contrarian",
+    taker: "contrarian",
+    live: "contrarian",
+    cvd: "contrarian",
+    premium: "contrarian",
+    proximity: "contrarian",
+    sweep: "contrarian",
+    velocity: "contrarian",
+    oi: "momentum",
+    oiSlope: "momentum",
+    mtf: "momentum",
+    momentum: "momentum",
+    book: "momentum",
+  };
+  const tagged: Factor[] = factors.map((f) => ({ ...f, school: SCHOOL_OF[f.id] ?? "momentum" }));
+
+  const cF = tagged.filter((f) => f.school === "contrarian");
+  const mF = tagged.filter((f) => f.school === "momentum");
+  const wC = cF.reduce((a, f) => a + f.weight, 0) || 1;
+  const wM = mF.reduce((a, f) => a + f.weight, 0) || 1;
+  const contrarian = cF.reduce((a, f) => a + f.score * f.weight, 0) / wC;
+  const momentum = mF.reduce((a, f) => a + f.score * f.weight, 0) / wM;
+
+  // compuerta de fase: señales de que el mercado está en "modo caza"
+  const atrPct = inp.spot > 0 ? (inp.atr1h / inp.spot) * 100 : 0;
+  const nearestPct = inp.clusters.length ? Math.min(...inp.clusters.map((c) => c.distancePct)) : 99;
+  let gate = 0.68; // el radar es de liquidaciones: la escuela contrarian manda por defecto
+  if (Math.abs(inp.fundingRate) >= 0.0003) gate += 0.08; // funding extremo → multitud apilada
+  if (nearestPct <= atrPct) gate += 0.1; // combustible pegado al precio → caza inminente
+  if (Math.abs(inp.oiSlope5m) >= 1) gate += 0.06; // apalancamiento entrando rápido
+  if (aligned && Math.abs(cfScore) >= 0.5) gate -= 0.12; // tendencia multi-plazo limpia → deja hablar al impulso
+  if (Math.abs(inp.momPct ?? 0) >= 0.8 && Math.abs(inp.fundingRate) < 0.00008) gate -= 0.1; // impulso fuerte sin multitud
+  gate = Math.min(0.85, Math.max(0.4, gate));
+
+  const score = gate * contrarian + (1 - gate) * momentum;
   const scorePct = Math.round(score * 100);
+  const contrarianPct = Math.round(contrarian * 100);
+  const momentumPct = Math.round(momentum * 100);
+  const gatePct = Math.round(gate * 100);
+  const harmony = Math.round(100 * (1 - Math.abs(contrarian - momentum) / 2));
 
   let direction: Verdict["direction"] = "neutral";
   if (score > 0.14) direction = "up";
   else if (score < -0.14) direction = "down";
 
-  const align = factors.filter((f) => (direction === "neutral" ? false : Math.sign(f.score) === Math.sign(score))).length;
+  const align = tagged.filter((f) => (direction === "neutral" ? false : Math.sign(f.score) === Math.sign(score))).length;
 
-  // confianza: base + magnitud del sesgo + alineación de factores,
+  // confianza: base + magnitud del sesgo + alineación + acuerdo entre escuelas,
   // ajustada por el régimen de volatilidad (alta vol = menos certeza)
-  const atrPct = inp.spot > 0 ? (inp.atr1h / inp.spot) * 100 : 0;
   const regime = classifyRegime(atrPct);
   const volPenalty = Math.min(16, Math.max(0, (atrPct - 0.45) * 40));
   const volAdj = Math.max(volPenalty, Math.abs(regime.confAdj)); // evita doble-penalizar
   const mtfBonus = aligned ? 5 : 0;
-  const confidence = Math.max(15, Math.round(Math.min(93, 24 + Math.abs(score) * 62 + align * 5 + mtfBonus) - volAdj));
+  const harmonyAdj = (harmony - 50) * 0.12; // acuerdo sube, discrepancia baja
+  const confidence = Math.max(15, Math.round(Math.min(93, 24 + Math.abs(score) * 62 + align * 5 + mtfBonus + harmonyAdj) - volAdj));
   if (regime.regime === "high" || regime.regime === "extreme") {
     warnings.push({ tone: regime.regime === "extreme" ? "danger" : "warn", text: `Régimen de volatilidad ${regime.label} (ATR ${atrPct.toFixed(2)}%/h): ${regime.note}` });
   }
@@ -762,6 +814,14 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     warnings.push({
       tone: "warn",
       text: `Cluster ${cascade[0].tag} a ${cascade[0].distancePct.toFixed(2)}% del spot (menos de 1 ATR): zona de barrida inmediata`,
+    });
+  }
+
+  // discrepancia entre escuelas: se avisa en lugar de promediar en silencio
+  if (Math.sign(contrarian) !== Math.sign(momentum) && Math.abs(contrarian) > 0.25 && Math.abs(momentum) > 0.25) {
+    warnings.push({
+      tone: "warn",
+      text: `Escuelas en desacuerdo: contrarian ${contrarian > 0 ? "alcista" : "bajista"} vs impulso ${momentum > 0 ? "alcista" : "bajista"} — la confianza se reduce; espera a que un barrido defina el lado`,
     });
   }
 
@@ -788,7 +848,58 @@ export function computeVerdict(inp: VerdictInput): Verdict {
       : "Presión bajista dominante, aunque sin un cluster grande cercano definido.";
   }
 
-  return { direction, headline, sub, scorePct, confidence, target, invalidation, windowH, factors, cascade, warnings, regime };
+  const narrative = buildNarrative(direction, gatePct, contrarianPct, momentumPct, harmony, target);
+
+  return {
+    direction,
+    headline,
+    sub,
+    narrative,
+    scorePct,
+    contrarianPct,
+    momentumPct,
+    gatePct,
+    harmony,
+    confidence,
+    target,
+    invalidation,
+    windowH,
+    factors: tagged,
+    cascade,
+    warnings,
+    regime,
+  };
+}
+
+/* Historia armonizada: qué dice cada escuela y por qué manda una */
+function buildNarrative(
+  dir: Verdict["direction"],
+  gatePct: number,
+  cPct: number,
+  mPct: number,
+  harmony: number,
+  target: Cluster | null
+): string {
+  const word = (v: number) => (v >= 15 ? "alcista" : v <= -15 ? "bajista" : "neutral");
+  const cw = word(cPct);
+  const mw = word(mPct);
+  const magnet = target
+    ? target.side === "short"
+      ? `el combustible de shorts está arriba en ${fmtUsd(target.price)}`
+      : `el combustible de longs está abajo en ${fmtUsd(target.price)}`
+    : "sin un cluster dominante definido";
+  if (dir === "up") {
+    const flow = mw === "alcista" ? "y el impulso acompaña" : mw === "bajista" ? "aunque el impulso aún frena" : "con el impulso sin definir";
+    return `Fase de caza (peso ${gatePct}%): ${magnet}; la lectura contrarian ${cw} es la que manda, ${flow}. Armonía ${harmony}%. El precio tiende a viajar a ese imán antes de decidir dirección.`;
+  }
+  if (dir === "down") {
+    const flow = mw === "bajista" ? "y el impulso acompaña" : mw === "alcista" ? "aunque el impulso aún frena" : "con el impulso sin definir";
+    return `Fase de caza (peso ${gatePct}%): ${magnet}; la lectura contrarian ${cw} es la que manda, ${flow}. Armonía ${harmony}%. El precio tiende a cazar esas liquidaciones antes de decidir dirección.`;
+  }
+  if (Math.sign(cPct) !== Math.sign(mPct) && Math.abs(cPct) >= 15 && Math.abs(mPct) >= 15) {
+    return `Escuelas en desacuerdo: contrarian ${cw} vs impulso ${mw} (armonía ${harmony}%). No hay ventaja clara — espera a que un barrido defina el lado.`;
+  }
+  return `Ni multitud definida ni impulso claro: mercado en equilibrio (armonía ${harmony}%). El radar no tiene ventaja que ofrecerte ahora mismo.`;
 }
 
 /* ------------------------------------------------------------

@@ -33,7 +33,7 @@ export function KeyLevelsPanel({ levels, spot }: { levels: KeyLevel[]; spot: num
     <div className="flex h-full flex-col p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="panel-tag">niveles clave · estructura objetiva</div>
+          <div className="panel-tag">M2 · niveles clave · estructura objetiva</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
             Soportes, resistencias y Fibonacci
           </h2>

@@ -137,7 +137,7 @@ export function RumboGauge({ v, spot, history = [], magnetClose = false, magnetP
             <span className="font-mono text-sm font-600 uppercase tracking-widest text-mist">{tag}</span>
           </div>
 
-          <p className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-mist">{v.sub}</p>
+          <p className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-mist">{v.narrative || v.sub}</p>
 
           <div className="mt-4 flex flex-wrap items-center gap-x-7 gap-y-2 font-mono text-[12px] tabular-nums">
             <div>

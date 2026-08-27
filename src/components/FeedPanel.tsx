@@ -16,7 +16,7 @@ export function FeedPanel({ events, sessionLong, sessionShort, live }: Props) {
     <div className="flex h-full flex-col p-5">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <div className="panel-tag">03 · cinta de liquidaciones</div>
+          <div className="panel-tag">M5 · cinta de liquidaciones</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog">Liquidaciones en vivo</h2>
         </div>
         <span

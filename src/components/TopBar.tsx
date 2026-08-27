@@ -63,8 +63,8 @@ export function TopBar({ m, soundOn, onToggleSound }: { m: MarketData; soundOn: 
         {/* métricas rápidas */}
         <div className="ml-auto flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-[12px] tabular-nums">
           <div>
-            <div className="panel-tag">funding</div>
-            <div className={m.fundingRate >= 0 ? "text-long" : "text-short"}>
+            <div className="panel-tag" title="Convención contrarian: funding positivo = multitud long = presión bajista (rojo)">funding</div>
+            <div className={m.fundingRate >= 0 ? "text-short" : "text-long"}>
               {(m.fundingRate * 100).toFixed(4)}% <span className="text-dusk">· {fundingLabel}</span>
             </div>
           </div>
@@ -127,7 +127,7 @@ export function TopBar({ m, soundOn, onToggleSound }: { m: MarketData; soundOn: 
               <span>◆ MÁX 24H <b className="text-fog">{m.high24h ? fmtUsd(m.high24h) : "—"}</b></span>
               <span>◆ MÍN 24H <b className="text-fog">{m.low24h ? fmtUsd(m.low24h) : "—"}</b></span>
               <span>◆ VOL 24H <b className="text-fog">{m.quoteVolume24h ? "$" + (m.quoteVolume24h / 1e9).toFixed(2) + "B" : "—"}</b></span>
-              <span>◆ FUNDING <b className={m.fundingRate >= 0 ? "text-long" : "text-short"}>{(m.fundingRate * 100).toFixed(4)}%</b></span>
+              <span>◆ FUNDING <b className={m.fundingRate >= 0 ? "text-short" : "text-long"}>{(m.fundingRate * 100).toFixed(4)}%</b></span>
               <span>◆ OI 24H <b className={m.oiChange24h >= 0 ? "text-long" : "text-short"}>{m.oiChange24h >= 0 ? "+" : ""}{m.oiChange24h.toFixed(1)}%</b></span>
               <span>◆ RATIO RETAIL <b className="text-fog">{m.globalRatio.toFixed(2)}</b></span>
               <span>◆ RATIO TOP <b className="text-fog">{m.topRatio.toFixed(2)}</b></span>

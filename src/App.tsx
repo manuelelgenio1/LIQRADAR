@@ -584,7 +584,7 @@ export default function App() {
               <section className="panel p-5">
                 <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
                   <div>
-                    <div className="panel-tag">00 · contexto</div>
+                    <div className="panel-tag">M1 · contexto</div>
                     <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
                       BTC/USDT · velas {TF_CONFIG[tf].label} <span className="text-mist">({TF_CONFIG[tf].desc})</span> · footprint + OI
                     </h2>
