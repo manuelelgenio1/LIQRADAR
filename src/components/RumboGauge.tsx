@@ -178,8 +178,9 @@ export function RumboGauge({ v, spot, history = [], magnetClose = false, magnetP
                 />
               </div>
               <p className="mt-1.5 font-mono text-[9.5px] leading-relaxed text-dusk">
-                Combina la confianza del modelo, tu tasa de acierto histórica (si has corrido el laboratorio) y la frescura
-                de los datos. {reliability >= 65 ? "Señal sólida: sigue tu plan y el tamaño de posición." : reliability >= 45 ? "Señal media: reduce el tamaño o espera más confirmación." : "Señal débil: mejor esperar — la incertidumbre domina."}{" "}
+                Combina la confianza del modelo, tu tasa de acierto histórica, la frescura de los datos y —sobre todo— la
+                confluencia multi-timeframe: si 12h, 24h y 72h apuntan al mismo lado que el rumbo, la confiabilidad sube;
+                si discrepan, baja. {reliability >= 65 ? "Señal sólida: sigue tu plan y el tamaño de posición." : reliability >= 45 ? "Señal media: reduce el tamaño o espera más confirmación." : "Señal débil: mejor esperar — la incertidumbre domina."}{" "}
                 Ninguna señal es una certeza.
               </p>
             </div>

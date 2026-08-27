@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMarket, TF_CONFIG, type Timeframe } from "./hooks/useMarket";
+import { useConfluence } from "./hooks/useConfluence";
 import { useReveal } from "./hooks/useReveal";
 import { estimateLiquidationMap, computeVerdict, atrOf, computeCvd, fundingProximity, detectSweep, liqVelocityScore } from "./lib/engine";
 import {
@@ -26,6 +27,7 @@ import type { BiasPoint } from "./components/RumboGauge";
 import { loadSoundPref, playConfirm, playFlip, playMagnet, playSniper, saveSoundPref } from "./lib/sound";
 import { MarketPulsePanel } from "./components/MarketPulsePanel";
 import { BenchmarkPanel } from "./components/BenchmarkPanel";
+import { ConfluencePanel } from "./components/ConfluencePanel";
 import { ExchangeRadarPanel } from "./components/ExchangeRadarPanel";
 import { AlertCenter, type SniperCfg } from "./components/AlertCenter";
 import { SniperToast, type SniperInfo } from "./components/SniperToast";
@@ -65,6 +67,7 @@ export default function App() {
   const [tf, setTf] = useState<Timeframe>("72h");
   const [levs, setLevs] = useState<number[]>([10, 25, 50, 100]);
   const market = useMarket(tf);
+  const confluence = useConfluence();
 
   // redondeo del spot para no recalcular el mapa en cada tick
   const roundedSpot = useMemo(() => Math.round(market.spot / 8) * 8, [market.spot]);
@@ -335,7 +338,8 @@ export default function App() {
     sendWebhook("prueba", { mensaje: "LiqRadar conectado: recibirás giros de rumbo, zonas magnéticas y señales francotirador" });
   };
 
-  // índice de confiabilidad de la señal: confianza del modelo + acierto histórico + frescura de datos
+  // índice de confiabilidad de la señal: confianza del modelo + acierto histórico +
+  // frescura de datos + confluencia multi-timeframe (coincidir con el rumbo suma)
   const reliability = useMemo(() => {
     if (!analysis) return null;
     const conf = analysis.verdict.confidence;
@@ -343,8 +347,22 @@ export default function App() {
     const src = market.sources;
     const liveCount = [src.klines, src.metrics, src.price, src.liq].filter((s) => s === "live").length;
     const freshness = liveCount === 4 ? 100 : liveCount >= 2 ? 60 : 30;
-    return Math.round(0.5 * conf + 0.3 * hist + 0.2 * freshness);
-  }, [analysis, hitRate, market.sources]);
+
+    // confluencia: si los timeframes cargaron y hay acuerdo, aporta; si además el
+    // acuerdo apunta en la MISMA dirección que el veredicto, aporta el máximo
+    let mtf = 50;
+    if (!confluence.loading && !confluence.sim) {
+      if (confluence.alignedDir === "mixed" || confluence.alignedDir === null) {
+        mtf = 40; // sin acuerdo → pequeña penalización
+      } else if (confluence.alignedDir === analysis.verdict.direction) {
+        mtf = 50 + confluence.grade * 0.5; // hasta 100 si 3/3 alineados con el rumbo
+      } else {
+        mtf = Math.max(0, 50 - confluence.grade * 0.5); // acuerdo en contra → penaliza
+      }
+    }
+
+    return Math.round(0.4 * conf + 0.2 * hist + 0.15 * freshness + 0.25 * mtf);
+  }, [analysis, hitRate, market.sources, confluence]);
 
   const r0 = useReveal();
   const r1 = useReveal();
@@ -359,6 +377,7 @@ export default function App() {
   const r10 = useReveal();
   const r11 = useReveal();
   const r12 = useReveal();
+  const r13 = useReveal();
 
   return (
     <div className="relative min-h-screen font-body">
@@ -388,6 +407,11 @@ export default function App() {
                 FIJANDO RUMBO…
               </div>
             )}
+          </section>
+
+          {/* confluencia multi-timeframe */}
+          <section className="panel reveal mb-5" ref={r13}>
+            <ConfluencePanel spot={market.spot} confluence={confluence} />
           </section>
 
           {/* centro de alertas */}

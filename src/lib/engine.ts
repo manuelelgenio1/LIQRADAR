@@ -725,6 +725,106 @@ export function computeVerdict(inp: VerdictInput): Verdict {
 }
 
 /* ------------------------------------------------------------
+   Sesgo de un timeframe completo (para confluencia multi-plazo).
+   Usa solo factores de acción de precio + volumen (los que se
+   pueden derivar de las velas); los de datos en vivo van neutros.
+   ------------------------------------------------------------ */
+export interface TfBias {
+  tf: string;
+  label: string;
+  direction: "up" | "down" | "neutral";
+  scorePct: number; // -100..100
+  word: string;
+}
+
+export function biasFromCandles(
+  candles: Candle[],
+  tf: string,
+  label: string,
+  msPerCandle: number,
+  range: number
+): TfBias {
+  const spot = candles[candles.length - 1].close;
+  const cvd = computeCvd(candles);
+  const { longPool, shortPool, nearLongPool, nearShortPool, clusters } = estimateLiquidationMap(
+    candles,
+    spot,
+    [10, 25, 50, 100],
+    range,
+    58,
+    0,
+    2
+  );
+  const n = candles.length;
+  const last = spot;
+  const k3 = Math.max(2, Math.floor(n / 3));
+  const fastSlopePct = ((last - candles[n - 1 - k3].close) / candles[n - 1 - k3].close) * 100;
+  const slowSlopePct = ((last - candles[0].close) / candles[0].close) * 100;
+  const km = Math.max(2, Math.floor(n / 6));
+  const momPct = ((last - candles[n - 1 - km].close) / candles[n - 1 - km].close) * 100;
+
+  const v = computeVerdict({
+    spot,
+    longPool,
+    shortPool,
+    nearLongPool,
+    nearShortPool,
+    clusters,
+    fundingRate: 0,
+    fundingTrend: 0,
+    globalRatio: 1,
+    topRatio: 1,
+    takerRatio: 1,
+    oiChange24h: 0,
+    oiSlope5m: 0,
+    priceChange24h: slowSlopePct,
+    premium: 0,
+    atr1h: atrOf(candles) * (3600_000 / msPerCandle),
+    liveLongLiq: 0,
+    liveShortLiq: 0,
+    cvdPct: cvd.cvdPct,
+    cvdDiv: cvd.divergence,
+    oiUsdt: 0,
+    fastSlopePct,
+    slowSlopePct,
+    momPct,
+    bookImbalance: 1,
+    xCfundingGap: 0,
+    fundingWindow: 0,
+    sweep: 0,
+    liqVelocity: 0,
+  });
+
+  return {
+    tf,
+    label,
+    direction: v.direction,
+    scorePct: v.scorePct,
+    word: v.direction === "up" ? "LONG" : v.direction === "down" ? "SHORT" : "NEUTRO",
+  };
+}
+
+/* Grado de confluencia entre timeframes → 0..100 */
+export function confluenceGrade(biases: TfBias[]): { grade: number; label: string; alignedDir: "up" | "down" | "mixed" | null } {
+  if (biases.length === 0) return { grade: 0, label: "—", alignedDir: null };
+  const ups = biases.filter((b) => b.direction === "up").length;
+  const downs = biases.filter((b) => b.direction === "down").length;
+  const total = biases.length;
+  const dominant = Math.max(ups, downs);
+  const grade = Math.round((dominant / total) * 100);
+  const alignedDir = ups === downs ? "mixed" : ups > downs ? "up" : "down";
+  const label =
+    dominant === total
+      ? alignedDir === "up"
+        ? "CONFLUENCIA TOTAL · LONG"
+        : "CONFLUENCIA TOTAL · SHORT"
+      : dominant >= total - 1
+        ? `Mayoría ${alignedDir === "up" ? "LONG" : "SHORT"}`
+        : "SIN ACUERDO";
+  return { grade, label, alignedDir };
+}
+
+/* ------------------------------------------------------------
    Formato
    ------------------------------------------------------------ */
 export const fmtUsd = (v: number, digits = 0) =>
