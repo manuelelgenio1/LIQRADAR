@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type { Verdict } from "../lib/engine";
 import { fmtUsd } from "../lib/engine";
 
@@ -30,7 +31,10 @@ export function PredictionPanel({ v, updatedAt }: { v: Verdict; updatedAt: numbe
       {/* veredicto */}
       <div className="flex flex-wrap items-center gap-6 rounded-lg border border-line/70 bg-ink-950/50 p-5">
         {/* anillo de confianza */}
-        <div className="verdict-pulse relative shrink-0 rounded-full" style={{ width: 128, height: 128 }}>
+        <div
+          className="verdict-pulse relative shrink-0 rounded-full"
+          style={{ width: 128, height: 128, "--pulse-color": s.color } as CSSProperties}
+        >
           <svg width="128" height="128" viewBox="0 0 128 128">
             <circle cx="64" cy="64" r={R} fill="none" stroke="#15233c" strokeWidth="9" />
             <circle
