@@ -130,7 +130,7 @@ export function DiagnosticsPanel({ m, a, rangePct, preds, flips }: Props) {
   sources.push({
     id: "price",
     label: "Precio en vivo · WebSocket btcusdt@trade",
-    status: !priceLive ? "warn" : secsSincePrice <= 15 ? "ok" : "fail",
+    status: !priceLive ? "warn" : secsSincePrice <= 30 ? "ok" : "fail",
     detail: priceLive
       ? `stream conectado · ${fmtUsd(m.spot, 1)} · último tick hace ${secsSincePrice}s`
       : `modo simulado activo · ${fmtUsd(m.spot, 1)} · tick hace ${secsSincePrice}s (tu red no permite wss://stream.binance.com)`,
@@ -178,23 +178,31 @@ export function DiagnosticsPanel({ m, a, rangePct, preds, flips }: Props) {
           : `${a.clusters.length} clusters · ${inRange ? `todos dentro de ±${(rangePct * 100).toFixed(1)}% del spot` : "ALGÚN CLUSTER FUERA DE RANGO"}`,
     });
 
-    const targetOk = !v.target || (v.direction === "up" ? v.target.price > m.spot : v.target.price < m.spot);
+    // tolerancia del 0.3%: el spot en vivo se mueve entre recálculos del motor
+    const tol = 0.003;
+    const targetSide = v.target ? (v.direction === "up" ? v.target.price > m.spot : v.target.price < m.spot) : true;
+    const targetNear = v.target ? Math.abs(v.target.price - m.spot) / m.spot <= tol : true;
     engine.push({
       id: "target",
       label: "Objetivo en el lado correcto del precio",
-      status: !v.target ? "warn" : targetOk ? "ok" : "fail",
+      status: !v.target ? "warn" : targetSide || targetNear ? "ok" : "warn",
       detail: v.target
-        ? `rumbo ${v.direction === "up" ? "LONG → objetivo arriba" : "SHORT → objetivo abajo"}: ${fmtUsd(v.target.price)} vs spot ${fmtUsd(m.spot)}`
+        ? targetSide || targetNear
+          ? `rumbo ${v.direction === "up" ? "LONG → objetivo arriba" : "SHORT → objetivo abajo"}: ${fmtUsd(v.target.price)} vs spot ${fmtUsd(m.spot)}`
+          : `el precio ya cruzó el objetivo (${fmtUsd(v.target.price)}) — el sweep ocurrió y el escenario se está recalculando`
         : "veredicto sin cluster objetivo definido",
     });
 
-    const invOk = !v.invalidation || (v.direction === "up" ? v.invalidation.price < m.spot : v.invalidation.price > m.spot);
+    const invSide = v.invalidation ? (v.direction === "up" ? v.invalidation.price < m.spot : v.invalidation.price > m.spot) : true;
+    const invNear = v.invalidation ? Math.abs(v.invalidation.price - m.spot) / m.spot <= tol : true;
     engine.push({
       id: "inval",
       label: "Invalidación en el lado contrario",
-      status: !v.invalidation ? "warn" : invOk ? "ok" : "fail",
+      status: !v.invalidation ? "warn" : invSide || invNear ? "ok" : "warn",
       detail: v.invalidation
-        ? `${fmtUsd(v.invalidation.price)} ${v.direction === "up" ? "bajo el spot (liq. longs)" : "sobre el spot (liq. shorts)"} — barrerlo anula el escenario`
+        ? invSide || invNear
+          ? `${fmtUsd(v.invalidation.price)} ${v.direction === "up" ? "bajo el spot (liq. longs)" : "sobre el spot (liq. shorts)"} — barrerlo anula el escenario`
+          : `el precio cruzó la invalidación (${fmtUsd(v.invalidation.price)}) — escenario anulado en vivo, esperando recálculo`
         : "sin nivel de invalidación definido",
     });
 

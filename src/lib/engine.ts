@@ -285,7 +285,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? `Longs pagan ${(inp.fundingRate * 100).toFixed(4)}% c/8h → multitud long`
         : `Shorts pagan ${(Math.abs(inp.fundingRate) * 100).toFixed(4)}% c/8h → multitud short`,
     score: fScore,
-    weight: 0.13,
+    weight: 0.12,
   });
   if (Math.abs(inp.fundingRate) >= 0.0003) {
     warnings.push({
@@ -319,7 +319,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     label: "Cuentas retail long/short",
     detail: `${inp.globalRatio.toFixed(2)}× → ${inp.globalRatio > 1 ? "retail inclinado a LONG" : "retail inclinado a SHORT"}`,
     score: gScore,
-    weight: 0.09,
+    weight: 0.08,
   });
 
   // 4 · Top traders (posiciones)
@@ -329,7 +329,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     label: "Posiciones de top traders",
     detail: `Ratio ${inp.topRatio.toFixed(2)} → ${inp.topRatio > 1 ? "ballenas en LONG" : "ballenas en SHORT"}`,
     score: tScore,
-    weight: 0.11,
+    weight: 0.10,
   });
 
   // 5 · Pools de liquidación ponderados por cercanía (la liquidez próxima es más magnética)
@@ -346,7 +346,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? `${poolX.toFixed(1)}× más shorts ARRIBA (cercanos: ${(nearRaw * 100).toFixed(0)}% neto) → imán alcista`
         : `${poolX.toFixed(1)}× más longs ABAJO (cercanos: ${(nearRaw * 100).toFixed(0)}% neto) → imán bajista`,
     score: pScore,
-    weight: 0.19,
+    weight: 0.18,
   });
 
   // 6 · Interés abierto + tendencia 24h
@@ -375,7 +375,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   } else {
     osDetail = `OI ${inp.oiSlope5m >= 0 ? "+" : ""}${inp.oiSlope5m.toFixed(2)}% en 2.5h → apalancamiento estable`;
   }
-  factors.push({ id: "oiSlope", label: "OI en tiempo real (5m)", detail: osDetail, score: osScore, weight: 0.09 });
+  factors.push({ id: "oiSlope", label: "OI en tiempo real (5m)", detail: osDetail, score: osScore, weight: 0.08 });
 
   // 8 · Flujo de takers en futuros (quién cruza el spread)
   const tkScore = clamp((1 - inp.takerRatio) * 2.2);
@@ -387,7 +387,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? `Ratio ${inp.takerRatio.toFixed(2)} → dominan las compras agresivas (multitud long)`
         : `Ratio ${inp.takerRatio.toFixed(2)} → dominan las ventas agresivas (multitud short)`,
     score: tkScore,
-    weight: 0.08,
+    weight: 0.07,
   });
 
   // 9 · Liquidaciones en vivo: si ya liquidaron longs, el combustible bajista se gastó
@@ -404,7 +404,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
           ? "Ya se liquidaron más LONGS → combustible bajista gastado"
           : "Ya se liquidaron más SHORTS → combustible alcista gastado",
     score: lScore,
-    weight: 0.07,
+    weight: 0.06,
   });
 
   // 10 · Delta de takers spot (CVD): compra agresiva = multitud long apilada
@@ -420,7 +420,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
           ? "Divergencia: precio baja pero absorben la venta → vendedores agotados"
           : `Compra neta ${(inp.cvdPct * 100).toFixed(1)}% del volumen → ${inp.cvdPct > 0.02 ? "multitud comprando en ask" : inp.cvdPct < -0.02 ? "multitud vendiendo en bid" : "flujo equilibrado"}`,
     score: cvdScore,
-    weight: 0.07,
+    weight: 0.06,
   });
   if (inp.cvdDiv === "bear") {
     warnings.push({ tone: "danger", text: "Divergencia CVD bajista: el precio sube sin compradores agresivos — combustible de long squeeze activo" });
@@ -455,7 +455,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
       ? `Tendencia reciente (${fast >= 0 ? "+" : ""}${fast.toFixed(1)}%) y de fondo (${slow >= 0 ? "+" : ""}${slow.toFixed(1)}%) ALINEADAS`
       : `Tendencia reciente (${fast >= 0 ? "+" : ""}${fast.toFixed(1)}%) vs fondo (${slow >= 0 ? "+" : ""}${slow.toFixed(1)}%) en conflicto`,
     score: cfScore,
-    weight: 0.06,
+    weight: 0.07,
   });
 
   const wSum = factors.reduce((a, f) => a + f.weight, 0);
