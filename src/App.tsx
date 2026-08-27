@@ -37,6 +37,8 @@ import { FundingHeatmap } from "./components/FundingHeatmap";
 import { AgentBridgePanel } from "./components/AgentBridgePanel";
 import { PaperAgentPanel } from "./components/PaperAgentPanel";
 import { usePaperAgent } from "./hooks/usePaperAgent";
+import { AuditLogPanel } from "./components/AuditLogPanel";
+import { installGlobalErrorHandlers, logAudit } from "./lib/auditLog";
 import { SectionGroup } from "./components/SectionGroup";
 import { MiniNav, type ZoneDef } from "./components/MiniNav";
 import { AlertCenter, type SniperCfg, type PriceLevel } from "./components/AlertCenter";
@@ -266,7 +268,18 @@ export default function App() {
       spot: flip.spot,
       objetivo: flip.target,
     });
+    logAudit(
+      "motor",
+      "info",
+      `Rumbo cambió a ${flip.dir === "up" ? "LONG ▲" : "SHORT ▼"} @ ${Math.round(flip.spot).toLocaleString("en-US")}`,
+      flip.target ? `imán en ${Math.round(flip.target).toLocaleString("en-US")}` : undefined
+    );
   }, [flip, soundOn]);
+
+  // capturadores globales de errores → al registro de auditoría (nada falla en silencio)
+  useEffect(() => {
+    installGlobalErrorHandlers();
+  }, []);
 
   // zona magnética: precio cerca del imán objetivo (≤0.6% o dentro de 1 ATR)
   const magnetClose =

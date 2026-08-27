@@ -561,10 +561,19 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     weight: 0.06,
   });
 
+  // atenuación simétrica de rebote: mientras la cascada SIGUE VIVA (impulso fuerte
+  // en la dirección de la liquidación), los factores de "combustible gastado" son
+  // prematuros — se amortiguan para no cancelar la tendencia antes de tiempo
+  const momRaw = inp.momPct ?? 0;
+  const trendLive = Math.min(1, Math.abs(momRaw) / 1.0); // 0..1
+
   // 9 · Liquidaciones en vivo: si ya liquidaron longs, el combustible bajista se gastó
   const tot = inp.liveLongLiq + inp.liveShortLiq;
   const lRaw = tot > 0 ? (inp.liveLongLiq - inp.liveShortLiq) / tot : 0;
-  const lScore = clamp(lRaw * 1.3);
+  // longs liquidados (lRaw>0) ocurren con precio cayendo (mom<0): si el impulso
+  // aún cae, la cascada sigue viva → el rebote es prematuro
+  const liveDamp = lRaw !== 0 && Math.sign(momRaw) === -Math.sign(lRaw) ? 1 - 0.65 * trendLive : 1;
+  const lScore = clamp(lRaw * 1.3) * liveDamp;
   factors.push({
     id: "live",
     label: "Liquidaciones de la sesión",
@@ -663,6 +672,8 @@ export function computeVerdict(inp: VerdictInput): Verdict {
 
   // 15 · Barrida reciente: mecha a través de un cluster con cierre de vuelta = combustible gastado
   const sw = inp.sweep ?? 0;
+  // si el impulso sigue en la dirección de la barrida, la descarga no ha terminado
+  const sweepDamp = sw !== 0 && Math.sign(momRaw) === Math.sign(sw) ? 1 - 0.65 * trendLive : 1;
   factors.push({
     id: "sweep",
     label: "Barrida de liquidez reciente",
@@ -672,7 +683,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         : sw > 0
           ? "Barrida de SHORTS detectada (mecha arriba) → el squeeze alcista ya descargó"
           : "Barrida de LONGS detectada (mecha abajo) → la caza de longs ya descargó",
-    score: clamp(sw),
+    score: clamp(sw) * sweepDamp,
     weight: 0.04,
   });
 
@@ -708,6 +719,8 @@ export function computeVerdict(inp: VerdictInput): Verdict {
 
   // 18 · Velocidad de liquidación: cascada activa en los últimos minutos
   const lv = inp.liqVelocity ?? 0;
+  // cascada de longs (lv>0) con impulso aún cayendo → la quema sigue viva
+  const velDamp = lv !== 0 && Math.sign(momRaw) === -Math.sign(lv) ? 1 - 0.65 * trendLive : 1;
   factors.push({
     id: "liqVelocity",
     label: "Velocidad de liquidación",
@@ -717,7 +730,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         : lv > 0
           ? "Cascada de LONGS acelerándose → el combustible bajista se está quemando"
           : "Cascada de SHORTS acelerándose → el combustible alcista se está quemando",
-    score: clamp(lv),
+    score: clamp(lv) * velDamp,
     weight: 0.02,
   });
 
@@ -769,7 +782,8 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   if (nearestPct <= atrPct) gate += 0.1; // combustible pegado al precio → caza inminente
   if (Math.abs(inp.oiSlope5m) >= 1) gate += 0.06; // apalancamiento entrando rápido
   if (aligned && Math.abs(cfScore) >= 0.5) gate -= 0.12; // tendencia multi-plazo limpia → deja hablar al impulso
-  if (Math.abs(inp.momPct ?? 0) >= 0.8 && Math.abs(inp.fundingRate) < 0.00008) gate -= 0.1; // impulso fuerte sin multitud
+  if (Math.abs(inp.momPct ?? 0) >= 0.8) gate -= 0.1; // impulso fuerte EN CUALQUIER dirección → la tendencia merece voz
+  if (Math.abs(inp.priceChange24h) >= 4) gate -= 0.08; // movimiento 24h grande → el mercado ya eligió lado
   gate = Math.min(0.85, Math.max(0.4, gate));
 
   const score = gate * contrarian + (1 - gate) * momentum;
@@ -779,9 +793,11 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   const gatePct = Math.round(gate * 100);
   const harmony = Math.round(100 * (1 - Math.abs(contrarian - momentum) / 2));
 
+  // banda muerta reducida (±0.10): una inclinación clara ya es dirección,
+  // con confianza proporcional — evita que las caídas colapsen a NEUTRO
   let direction: Verdict["direction"] = "neutral";
-  if (score > 0.14) direction = "up";
-  else if (score < -0.14) direction = "down";
+  if (score > 0.1) direction = "up";
+  else if (score < -0.1) direction = "down";
 
   const align = tagged.filter((f) => (direction === "neutral" ? false : Math.sign(f.score) === Math.sign(score))).length;
 

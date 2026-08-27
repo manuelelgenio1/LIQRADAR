@@ -112,6 +112,7 @@ export function useMarket(tf: Timeframe): MarketData {
         if (!alive) return;
         setCandles(simKlines(spotRef.current, cfg.limit, cfg.ms));
         setSources((s) => ({ ...s, klines: "sim" }));
+        logAudit("datos", "warn", `Velas ${cfg.interval} no disponibles en Binance → usando simulador coherente`);
       }
     };
     load();
