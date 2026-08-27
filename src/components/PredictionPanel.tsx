@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
-import type { Verdict } from "../lib/engine";
-import { fmtUsd } from "../lib/engine";
+import type { Cluster, Verdict } from "../lib/engine";
+import { fmtCompact, fmtUsd } from "../lib/engine";
 
 /* Convención global: LONG/alcista = verde · SHORT/bajista = rojo.
    El elemento coloreado es la DIRECCIÓN del movimiento; el mecanismo
@@ -135,6 +135,30 @@ export function PredictionPanel({ v, updatedAt }: { v: Verdict; updatedAt: numbe
         </div>
       </div>
 
+      {/* imán dominante del mapa: la respuesta directa a "¿hacia dónde va?" */}
+      <div className="rounded-lg border border-line/70 bg-ink-950/50 p-4">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <span className="panel-tag">imán del mapa · hacia dónde tira la liquidez</span>
+          <span
+            className="rounded-md px-2.5 py-1 font-mono text-[11px] font-700 tabular-nums"
+            style={{
+              color: v.pullPct > 0 ? "#2fd6a5" : v.pullPct < 0 ? "#ff4d6d" : "#93a5c8",
+              background: v.pullPct > 0 ? "rgba(47,214,165,0.1)" : v.pullPct < 0 ? "rgba(255,77,109,0.1)" : "rgba(147,165,200,0.08)",
+              border: `1px solid ${v.pullPct > 0 ? "rgba(47,214,165,0.4)" : v.pullPct < 0 ? "rgba(255,77,109,0.4)" : "rgba(147,165,200,0.3)"}`,
+            }}
+          >
+            {v.pullPct > 0 ? `▲ TIRA ARRIBA +${v.pullPct}%` : v.pullPct < 0 ? `▼ TIRA ABAJO ${v.pullPct}%` : "◆ EQUILIBRADO"}
+          </span>
+          <span className="ml-auto hidden font-mono text-[9.5px] text-dusk sm:block">
+            el precio barre primero la liquidez alcanzable, no la más grande
+          </span>
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <MagnetCard label="IMÁN ARRIBA · LIQ. SHORTS" zone="#ff4d6d" c={v.dominantUp} active={v.pullPct > 0} />
+          <MagnetCard label="IMÁN ABAJO · LIQ. LONGS" zone="#2fd6a5" c={v.dominantDown} active={v.pullPct < 0} />
+        </div>
+      </div>
+
       {/* armonía entre escuelas: quién dice qué y cuánto pesa cada una */}
       <div className="rounded-lg border border-line/70 bg-ink-950/50 p-4">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
@@ -257,6 +281,38 @@ function FactorRow({ f }: { f: Verdict["factors"][number] }) {
           }}
         />
       </div>
+    </div>
+  );
+}
+
+/* Tarjeta del imán dominante de un lado (arriba = shorts, abajo = longs).
+   El lado que "tira" se enciende con su color de zona y un latido. */
+function MagnetCard({ label, zone, c, active }: { label: string; zone: string; c: Cluster | null; active: boolean }) {
+  return (
+    <div
+      className="rounded-md border p-3 transition-all duration-300"
+      style={{
+        borderColor: active ? `${zone}66` : "rgba(27,44,74,0.6)",
+        background: active ? `${zone}0d` : "rgba(5,11,22,0.4)",
+        boxShadow: active ? `0 0 16px -6px ${zone}66` : "none",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-[9.5px] font-700 tracking-widest" style={{ color: zone }}>
+          {label}
+        </span>
+        {active && <span className="live-dot" style={{ background: zone, color: zone }} />}
+      </div>
+      {c ? (
+        <>
+          <div className="mt-1 font-mono text-lg font-700 tabular-nums text-fog">{fmtUsd(c.price)}</div>
+          <div className="font-mono text-[10px] tabular-nums text-dusk">
+            a {c.distancePct.toFixed(2)}% · {fmtCompact(c.estNotional)} · {c.tag}
+          </div>
+        </>
+      ) : (
+        <div className="mt-1 font-mono text-[11px] text-dusk">sin imán definido en este lado</div>
+      )}
     </div>
   );
 }

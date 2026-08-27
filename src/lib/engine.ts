@@ -77,6 +77,9 @@ export interface Verdict {
   momentumPct: number; // voto de la escuela de impulso (tendencia/flujo)
   gatePct: number; // peso de la fase de caza en la mezcla (40–85%)
   harmony: number; // 0..100 — acuerdo entre las dos escuelas
+  pullPct: number; // -100..100 — el imán del mapa: + = tira arriba (hacia shorts), − = tira abajo (hacia longs)
+  dominantUp: Cluster | null; // el imán más fuerte ARRIBA (liquidez de shorts)
+  dominantDown: Cluster | null; // el imán más fuerte ABAJO (liquidez de longs)
   confidence: number; // 0..100
   target: Cluster | null;
   invalidation: Cluster | null;
@@ -794,6 +797,8 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   // compuerta de fase: señales de que el mercado está en "modo caza"
   const atrPct = inp.spot > 0 ? (inp.atr1h / inp.spot) * 100 : 0;
   const nearestPct = inp.clusters.length ? Math.min(...inp.clusters.map((c) => c.distancePct)) : 99;
+  // el imán del mapa: hacia dónde tira la liquidez cercana (la señal ancla)
+  const lp = liquidityPull(inp.clusters, atrPct);
   let gate = 0.68; // el radar es de liquidaciones: la escuela contrarian manda por defecto
   if (Math.abs(inp.fundingRate) >= 0.0003) gate += 0.08; // funding extremo → multitud apilada
   if (nearestPct <= atrPct) gate += 0.1; // combustible pegado al precio → caza inminente
@@ -804,19 +809,23 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   gate = Math.min(0.85, Math.max(0.4, gate));
 
   const score = gate * contrarian + (1 - gate) * momentum;
-  const scorePct = Math.round(score * 100);
+
+  // LA DECISIÓN ESTÁ ANCLADA EN EL MAPA: el imán de liquidez cercano manda (55%),
+  // las escuelas confirman o matizan (45%). Así "hacia dónde va" lo dice lo que el
+  // radar mide mejor — la liquidez alcanzable — y no un promedio diluido de 19 factores.
+  const drive = 0.55 * lp.pull + 0.45 * score;
+
+  const scorePct = Math.round(drive * 100);
   const contrarianPct = Math.round(contrarian * 100);
   const momentumPct = Math.round(momentum * 100);
   const gatePct = Math.round(gate * 100);
   const harmony = Math.round(100 * (1 - Math.abs(contrarian - momentum) / 2));
 
-  // banda muerta reducida (±0.10): una inclinación clara ya es dirección,
-  // con confianza proporcional — evita que las caídas colapsen a NEUTRO
   let direction: Verdict["direction"] = "neutral";
-  if (score > 0.1) direction = "up";
-  else if (score < -0.1) direction = "down";
+  if (drive > 0.06) direction = "up";
+  else if (drive < -0.06) direction = "down";
 
-  const align = tagged.filter((f) => (direction === "neutral" ? false : Math.sign(f.score) === Math.sign(score))).length;
+  const align = tagged.filter((f) => (direction === "neutral" ? false : Math.sign(f.score) === Math.sign(drive))).length;
 
   // confianza: base + magnitud del sesgo + alineación + acuerdo entre escuelas,
   // ajustada por el régimen de volatilidad (alta vol = menos certeza)
@@ -825,13 +834,28 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   const volAdj = Math.max(volPenalty, Math.abs(regime.confAdj)); // evita doble-penalizar
   const mtfBonus = aligned ? 5 : 0;
   const harmonyAdj = (harmony - 50) * 0.12; // acuerdo sube, discrepancia baja
-  const confidence = Math.max(15, Math.round(Math.min(93, 24 + Math.abs(score) * 62 + align * 5 + mtfBonus + harmonyAdj) - volAdj));
+  // si el imán del mapa y las escuelas tiran del mismo lado, la convicción es mayor
+  const pullAgree = Math.sign(lp.pull) === Math.sign(score) && Math.abs(lp.pull) > 0.15 ? 6 : 0;
+  const confidence = Math.max(15, Math.round(Math.min(93, 24 + Math.abs(drive) * 62 + align * 5 + mtfBonus + harmonyAdj + pullAgree) - volAdj));
   if (regime.regime === "high" || regime.regime === "extreme") {
     warnings.push({ tone: regime.regime === "extreme" ? "danger" : "warn", text: `Régimen de volatilidad ${regime.label} (ATR ${atrPct.toFixed(2)}%/h): ${regime.note}` });
   }
 
-  const target = direction === "up" ? shorts[0] ?? null : direction === "down" ? longs[0] ?? null : null;
-  const invalidation = direction === "up" ? longs[0] ?? null : direction === "down" ? shorts[0] ?? null : null;
+  // objetivo = el IMÁN DOMINANTE del lado hacia donde tira el precio (ponderado por
+  // cercanía), no el cluster más grande aunque esté lejos: el precio barre primero lo
+  // alcanzable. La invalidación es el imán dominante del lado contrario.
+  const target =
+    direction === "up"
+      ? lp.up.cluster ?? shorts[0] ?? null
+      : direction === "down"
+        ? lp.down.cluster ?? longs[0] ?? null
+        : null;
+  const invalidation =
+    direction === "up"
+      ? lp.down.cluster ?? longs[0] ?? null
+      : direction === "down"
+        ? lp.up.cluster ?? shorts[0] ?? null
+        : null;
 
   // cascadas: clusters dentro de 1 ATR del spot → un sweep puede encadenarse
   const cascade =
@@ -881,7 +905,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
       : "Presión bajista dominante, aunque sin un cluster grande cercano definido.";
   }
 
-  const narrative = buildNarrative(direction, gatePct, contrarianPct, momentumPct, harmony, target);
+  const narrative = buildNarrative(direction, gatePct, contrarianPct, momentumPct, harmony, target, lp.pullPct);
 
   return {
     direction,
@@ -893,6 +917,9 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     momentumPct,
     gatePct,
     harmony,
+    pullPct: lp.pullPct,
+    dominantUp: lp.up.cluster,
+    dominantDown: lp.down.cluster,
     confidence,
     target,
     invalidation,
@@ -911,16 +938,17 @@ function buildNarrative(
   cPct: number,
   mPct: number,
   harmony: number,
-  target: Cluster | null
+  target: Cluster | null,
+  pullPct: number
 ): string {
   const word = (v: number) => (v >= 15 ? "alcista" : v <= -15 ? "bajista" : "neutral");
   const cw = word(cPct);
   const mw = word(mPct);
   const magnet = target
     ? target.side === "short"
-      ? `el combustible de shorts está arriba en ${fmtUsd(target.price)}`
-      : `el combustible de longs está abajo en ${fmtUsd(target.price)}`
-    : "sin un cluster dominante definido";
+      ? `el imán de shorts arriba en ${fmtUsd(target.price)} tira con ${Math.abs(pullPct)}% de fuerza`
+      : `el imán de longs abajo en ${fmtUsd(target.price)} tira con ${Math.abs(pullPct)}% de fuerza`
+    : "sin un imán dominante definido";
   if (dir === "up") {
     const flow = mw === "alcista" ? "y el impulso acompaña" : mw === "bajista" ? "aunque el impulso aún frena" : "con el impulso sin definir";
     return `Fase de caza (peso ${gatePct}%): ${magnet}; la lectura contrarian ${cw} es la que manda, ${flow}. Armonía ${harmony}%. El precio tiende a viajar a ese imán antes de decidir dirección.`;
@@ -1013,6 +1041,46 @@ export function biasFromCandles(
     direction: v.direction,
     scorePct: v.scorePct,
     word: v.direction === "up" ? "LONG" : v.direction === "down" ? "SHORT" : "NEUTRO",
+  };
+}
+
+/* ------------------------------------------------------------
+   Imán dominante: cuánta liquidez "tira" de cada lado, ponderada
+   por cercanía. Es la señal más afilada del radar — el precio
+   barre primero lo que tiene cerca, no lo que es más grande lejos.
+   ------------------------------------------------------------ */
+export interface Magnet {
+  cluster: Cluster | null; // el imán más fuerte de ese lado
+  pull: number; // 0..1 — magnetismo total del lado (normalizado)
+}
+
+export interface LiquidityPull {
+  pull: number; // -1..1 — positivo = tira hacia ARRIBA (hacia los shorts)
+  up: Magnet; // lado short (arriba)
+  down: Magnet; // lado long (abajo)
+  pullPct: number; // pull redondeado en %
+}
+
+export function liquidityPull(clusters: Cluster[], atrPct: number): LiquidityPull {
+  // decaimiento por distancia: lo cercano domina (nunca atrPct=0)
+  const magnet = (c: Cluster) => c.estNotional * c.intensity * Math.exp(-c.distancePct / Math.max(atrPct, 0.2));
+
+  const ups = clusters.filter((c) => c.side === "short");
+  const downs = clusters.filter((c) => c.side === "long");
+
+  const sumMag = (list: Cluster[]) => list.reduce((a, c) => a + magnet(c), 0);
+  const best = (list: Cluster[]): Cluster | null =>
+    list.length ? list.reduce((a, c) => (magnet(c) > magnet(a) ? c : a), list[0]) : null;
+
+  const upMag = sumMag(ups);
+  const downMag = sumMag(downs);
+  const total = upMag + downMag;
+
+  return {
+    pull: total > 0 ? (upMag - downMag) / total : 0,
+    up: { cluster: best(ups), pull: total > 0 ? upMag / total : 0 },
+    down: { cluster: best(downs), pull: total > 0 ? downMag / total : 0 },
+    pullPct: Math.round((total > 0 ? (upMag - downMag) / total : 0) * 100),
   };
 }
 
