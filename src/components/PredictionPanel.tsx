@@ -2,10 +2,13 @@ import type { CSSProperties } from "react";
 import type { Verdict } from "../lib/engine";
 import { fmtUsd } from "../lib/engine";
 
+/* Convención global: LONG/alcista = verde · SHORT/bajista = rojo.
+   El elemento coloreado es la DIRECCIÓN del movimiento; el mecanismo
+   (squeeze / caza) se muestra en un chip neutro para no invertir colores. */
 const DIR_STYLE = {
-  up: { color: "#2fd6a5", word: "ALCISTA", arrow: "▲" },
-  down: { color: "#ff4d6d", word: "BAJISTA", arrow: "▼" },
-  neutral: { color: "#ffb547", word: "NEUTRO", arrow: "◆" },
+  up: { color: "#2fd6a5", word: "LONG", arrow: "▲", mech: "SHORT SQUEEZE", mechNote: "caza de shorts arriba" },
+  down: { color: "#ff4d6d", word: "SHORT", arrow: "▼", mech: "LONG SQUEEZE", mechNote: "caza de longs abajo" },
+  neutral: { color: "#ffb547", word: "NEUTRO", arrow: "◆", mech: "RANGO", mechNote: "sin sesgo definido" },
 } as const;
 
 function SchoolMeter({ label, pct, n }: { label: string; pct: number; n: number }) {
@@ -97,13 +100,21 @@ export function PredictionPanel({ v, updatedAt }: { v: Verdict; updatedAt: numbe
         <div className="min-w-[200px] flex-1">
           <div className="flex items-center gap-2 font-mono text-[11px] tracking-widest text-dusk">
             <span className="live-dot" style={{ background: s.color, color: s.color }} />
-            VEREDICTO {s.word}
+            VEREDICTO DIRECCIONAL
           </div>
-          <div
-            className="font-display mt-1 text-2xl font-900 leading-tight tracking-tight sm:text-[27px]"
-            style={{ color: s.color, textShadow: `0 0 26px ${s.color}55` }}
-          >
-            {v.headline}
+          <div className="mt-1 flex flex-wrap items-center gap-3">
+            <span
+              className="font-display text-2xl font-900 leading-tight tracking-tight sm:text-[27px]"
+              style={{ color: s.color, textShadow: `0 0 26px ${s.color}55` }}
+            >
+              {s.arrow} {s.word}
+            </span>
+            <span
+              className="rounded-md border border-line/70 bg-ink-900/40 px-2.5 py-1 font-mono text-[10px] tracking-widest text-mist"
+              title={s.mechNote}
+            >
+              {s.mech}
+            </span>
           </div>
           <p className="mt-2 text-[13px] leading-relaxed text-mist">{v.sub}</p>
 
@@ -116,9 +127,9 @@ export function PredictionPanel({ v, updatedAt }: { v: Verdict; updatedAt: numbe
               />
             </div>
             <div className="mt-1 flex justify-between font-mono text-[9.5px] text-dusk">
-              <span>LONG SQUEEZE −100</span>
+              <span className="text-short-hi">▼ SHORT −100</span>
               <span className="tabular-nums text-mist">sesgo {v.scorePct > 0 ? "+" : ""}{v.scorePct}</span>
-              <span>+100 SHORT SQUEEZE</span>
+              <span className="text-long-hi">+100 LONG ▲</span>
             </div>
           </div>
         </div>
