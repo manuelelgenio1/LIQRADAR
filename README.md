@@ -6,7 +6,31 @@ Terminal de trading que estima **dónde se acumulan las liquidaciones** de BTC, 
 
 ---
 
-## 🖥️ Cómo ejecutarlo en tu PC
+## 🟢 LA FORMA FÁCIL (doble clic)
+
+Ya vienen incluidos dos lanzadores que **hacen todo solos**: instalan las dependencias la primera vez, arrancan el servidor y abren el navegador automáticamente.
+
+| Tu sistema | Qué hacer |
+|---|---|
+| **Windows** | Doble clic en **`INICIAR.bat`** |
+| **Mac / Linux** | Doble clic en **`iniciar.sh`** (si no ejecuta: en terminal, `chmod +x iniciar.sh` y luego `./iniciar.sh`) |
+
+Lo único que necesitas instalado es **Node.js** (una sola vez, desde <https://nodejs.org>, versión LTS). Si no lo tienes, el propio script te lo dice y te guía.
+
+Cuando aparezca `➜ Local: http://localhost:5173/`, el navegador se abrirá solo. **Para apagar el radar: cierra la ventana negra.**
+
+### 🪂 Aún más fácil: úsalo sin instalar NADA (Netlify Drop)
+
+Si no quieres tocar tu PC:
+
+1. En este entorno, ejecuta el build (o descarga la carpeta **`dist/`** ya compilada).
+2. Entra a <https://app.netlify.com/drop>
+3. **Arrastra la carpeta `dist/`** a la página.
+4. Listo: Netlify te da una URL pública (`https://tu-radar-xxxx.netlify.app`) que funciona en cualquier dispositivo, sin instalación.
+
+---
+
+## 🖥️ Forma manual (terminal)
 
 ### 1. Requisitos previos
 
