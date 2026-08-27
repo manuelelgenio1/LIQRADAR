@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createChart,
   ColorType,
@@ -7,8 +7,10 @@ import {
   type IPriceLine,
   type ISeriesApi,
   type UTCTimestamp,
+  type MouseEventParams,
 } from "lightweight-charts";
 import type { Candle, Cluster } from "../lib/engine";
+import { fmtUsd } from "../lib/engine";
 import type { OIPoint } from "../lib/binance";
 
 interface Props {
@@ -19,8 +21,17 @@ interface Props {
   levels?: { price: number; label: string }[];
 }
 
+interface HoverCandle {
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  t: number;
+}
+
 export function PriceChart({ candles, clusters, spot, oiHistory, levels }: Props) {
   const elRef = useRef<HTMLDivElement | null>(null);
+  const [hover, setHover] = useState<HoverCandle | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
@@ -91,6 +102,18 @@ export function PriceChart({ candles, clusters, spot, oiHistory, levels }: Props
       priceLineVisible: false,
     });
     chart.priceScale("oi").applyOptions({ scaleMargins: { top: 0.02, bottom: 0.55 }, visible: false });
+
+    // lectura OHLC de la vela bajo el cursor
+    chart.subscribeCrosshairMove((param: MouseEventParams) => {
+      const d = param.seriesData?.get(series) as
+        | { open: number; high: number; low: number; close: number }
+        | undefined;
+      if (d && param.time) {
+        setHover({ o: d.open, h: d.high, l: d.low, c: d.close, t: Number(param.time) });
+      } else {
+        setHover(null);
+      }
+    });
 
     chartRef.current = chart;
     seriesRef.current = series;
@@ -192,5 +215,29 @@ export function PriceChart({ candles, clusters, spot, oiHistory, levels }: Props
     });
   }, [clusters, spot, levels]);
 
-  return <div ref={elRef} className="h-[380px] w-full sm:h-[440px]" />;
+  // vela a mostrar: la del cursor, o la última si no hay hover
+  const last = candles.length ? candles[candles.length - 1] : null;
+  const view = hover ?? (last ? { o: last.open, h: last.high, l: last.low, c: last.close, t: last.time } : null);
+  const up = view ? view.c >= view.o : true;
+  const chg = view && view.o !== 0 ? ((view.c - view.o) / view.o) * 100 : 0;
+
+  return (
+    <div>
+      {/* franja OHLC de la vela bajo el cursor (o la última) */}
+      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] tabular-nums">
+        <span className="text-dusk">
+          {view ? new Date(view.t * 1000).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
+        </span>
+        <span className="text-mist">A <b className="text-fog">{view ? fmtUsd(view.o) : "—"}</b></span>
+        <span className="text-mist">M <b className="text-fog">{view ? fmtUsd(view.h) : "—"}</b></span>
+        <span className="text-mist">m <b className="text-fog">{view ? fmtUsd(view.l) : "—"}</b></span>
+        <span className="text-mist">C <b style={{ color: up ? "#2fd6a5" : "#ff4d6d" }}>{view ? fmtUsd(view.c) : "—"}</b></span>
+        <span className="rounded-sm px-1.5 py-0.5 font-700" style={{ color: up ? "#2fd6a5" : "#ff4d6d", background: up ? "rgba(47,214,165,0.1)" : "rgba(255,77,109,0.1)" }}>
+          {chg >= 0 ? "▲" : "▼"} {Math.abs(chg).toFixed(2)}%
+        </span>
+        <span className="ml-auto hidden text-[10px] text-dusk sm:block">{hover ? "vela bajo el cursor" : "última vela"}</span>
+      </div>
+      <div ref={elRef} className="h-[380px] w-full sm:h-[440px]" />
+    </div>
+  );
 }

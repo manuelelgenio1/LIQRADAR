@@ -243,6 +243,28 @@ export function LiqHeatmap({ candles, leverages, lookback, label }: Props) {
           </div>
         )}
       </div>
+
+      {/* escala de intensidad + guía de lectura */}
+      <div className="mt-3 flex flex-col gap-2 border-t border-line/50 pt-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3 font-mono text-[10px] text-dusk">
+          <span className="panel-tag">intensidad</span>
+          <span>baja</span>
+          <div className="flex h-2.5 w-32 overflow-hidden rounded-sm border border-line/60">
+            <div className="h-full flex-1" style={{ background: "linear-gradient(90deg,rgba(147,165,200,0.08),rgba(147,165,200,0.5))" }} />
+          </div>
+          <div className="flex h-2.5 w-32 overflow-hidden rounded-sm border border-line/60">
+            <div className="h-full flex-1" style={{ background: "linear-gradient(90deg,rgba(47,214,165,0.15),#2fd6a5)" }} />
+          </div>
+          <div className="flex h-2.5 w-32 overflow-hidden rounded-sm border border-line/60">
+            <div className="h-full flex-1" style={{ background: "linear-gradient(90deg,rgba(255,77,109,0.15),#ff4d6d)" }} />
+          </div>
+          <span>alta</span>
+        </div>
+        <p className="max-w-md text-[11px] leading-snug text-dusk">
+          <b className="text-fog">Cómo leerlo:</b> sigue una banda brillante en el tiempo. Si se mantiene cerca del
+          precio y este se acerca, es un imán activo; si se aleja, el combustible se desplazó.
+        </p>
+      </div>
     </div>
   );
 }

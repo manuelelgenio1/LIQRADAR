@@ -126,6 +126,48 @@ export function LiquidationMap({ bins, clusters, spot, longPool, shortPool, tf, 
         </div>
       </div>
 
+      {/* clusters principales: los imanes clave de cada lado, sin escanear el mapa */}
+      <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+        <div className="rounded-lg border border-short/30 bg-short/[0.04] p-3">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] font-700 tracking-widest text-short-hi">▼ ARRIBA · LIQ. SHORTS (objetivo alcista)</span>
+            <span className="font-mono text-[9.5px] tabular-nums text-dusk">{fmtCompact(shortPool)}</span>
+          </div>
+          <div className="mt-2 flex flex-col gap-1.5">
+            {clusters.filter((c) => c.side === "short").slice(0, 3).map((c) => (
+              <div key={c.tag} className="flex items-center justify-between rounded-md bg-ink-950/40 px-2.5 py-1 font-mono text-[10.5px] tabular-nums transition-transform duration-150 hover:translate-x-0.5">
+                <span className="font-700 text-short-hi">{c.tag}</span>
+                <span className="text-fog">{fmtUsd(c.price)}</span>
+                <span className="text-dusk">{fmtCompact(c.estNotional)}</span>
+                <span className="text-short-hi">+{c.distancePct.toFixed(2)}%</span>
+              </div>
+            ))}
+            {clusters.filter((c) => c.side === "short").length === 0 && (
+              <span className="font-mono text-[10px] text-dusk">Sin clusters destacados arriba.</span>
+            )}
+          </div>
+        </div>
+        <div className="rounded-lg border border-long/30 bg-long/[0.04] p-3">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] font-700 tracking-widest text-long-hi">▲ ABAJO · LIQ. LONGS (objetivo bajista)</span>
+            <span className="font-mono text-[9.5px] tabular-nums text-dusk">{fmtCompact(longPool)}</span>
+          </div>
+          <div className="mt-2 flex flex-col gap-1.5">
+            {clusters.filter((c) => c.side === "long").slice(0, 3).map((c) => (
+              <div key={c.tag} className="flex items-center justify-between rounded-md bg-ink-950/40 px-2.5 py-1 font-mono text-[10.5px] tabular-nums transition-transform duration-150 hover:translate-x-0.5">
+                <span className="font-700 text-long-hi">{c.tag}</span>
+                <span className="text-fog">{fmtUsd(c.price)}</span>
+                <span className="text-dusk">{fmtCompact(c.estNotional)}</span>
+                <span className="text-long-hi">−{c.distancePct.toFixed(2)}%</span>
+              </div>
+            ))}
+            {clusters.filter((c) => c.side === "long").length === 0 && (
+              <span className="font-mono text-[10px] text-dusk">Sin clusters destacados abajo.</span>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* mapa */}
       {bins.length === 0 ? (
         <div className="flex h-[420px] animate-pulse items-center justify-center rounded-md border border-line/50 font-mono text-xs text-dusk">

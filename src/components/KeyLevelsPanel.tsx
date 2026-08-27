@@ -12,6 +12,8 @@ const GROUPS: { id: Group; label: string }[] = [
   { id: "pivote", label: "Pivotes" },
 ];
 
+const clampPct = (v: number) => Math.min(100, Math.max(0, v));
+
 export function KeyLevelsPanel({ levels, spot }: { levels: KeyLevel[]; spot: number }) {
   const [group, setGroup] = useState<Group>("todos");
 
@@ -29,6 +31,14 @@ export function KeyLevelsPanel({ levels, spot }: { levels: KeyLevel[]; spot: num
     [filtered, spot]
   );
 
+  // rango del medidor: del soporte más cercano a la resistencia más cercana
+  const lo = nearestBelow ? nearestBelow.price : spot * 0.985;
+  const hi = nearestAbove ? nearestAbove.price : spot * 1.015;
+  const span = hi - lo || 1;
+  const spotPct = clampPct(((spot - lo) / span) * 100);
+  const toRes = nearestAbove ? ((nearestAbove.price - spot) / spot) * 100 : null;
+  const toSup = nearestBelow ? ((spot - nearestBelow.price) / spot) * 100 : null;
+
   return (
     <div className="flex h-full flex-col p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -38,9 +48,8 @@ export function KeyLevelsPanel({ levels, spot }: { levels: KeyLevel[]; spot: num
             Soportes, resistencias y Fibonacci
           </h2>
           <p className="mt-1 max-w-xl text-[13px] leading-relaxed text-mist">
-            A diferencia del mapa de liquidación (una estimación), estos niveles son{" "}
-            <b className="text-fog">objetivos</b>: se derivan directamente de las velas. Úsalos como zonas donde el
-            precio reacciona — y donde suelen vivir los clusters de liquidación.
+            Niveles <b className="text-fog">objetivos</b> derivados de las velas (sin estimación): zonas donde el precio
+            reacciona y donde suelen vivir los clusters de liquidación.
           </p>
         </div>
         <div className="flex gap-1.5">
@@ -52,40 +61,60 @@ export function KeyLevelsPanel({ levels, spot }: { levels: KeyLevel[]; spot: num
         </div>
       </div>
 
-      {/* nivel más cercano arriba / abajo */}
-      <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-        <div className="flex items-center justify-between rounded-lg border border-short/40 bg-short/[0.06] px-4 py-3 transition-transform duration-200 hover:-translate-y-0.5">
-          <div>
-            <div className="panel-tag">resistencia más cercana</div>
-            <div className="mt-0.5 font-mono text-xl font-700 tabular-nums text-short-hi">
-              {nearestAbove ? fmtUsd(nearestAbove.price) : "—"}
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="font-mono text-[11px] text-short-hi">{nearestAbove ? nearestAbove.short : ""}</div>
-            <div className="font-mono text-[11px] tabular-nums text-mist">
-              {nearestAbove ? `+${nearestAbove.distancePct.toFixed(2)}%` : ""}
+      {/* ══ medidor de posición: ¿dónde está el precio en la zona S/R? ══ */}
+      <div className="mt-4 rounded-lg border border-line/70 bg-ink-950/50 p-4">
+        <div className="flex items-center justify-between">
+          <span className="panel-tag">posición del precio en la zona</span>
+          <span className="font-mono text-[10.5px] tabular-nums text-mist">
+            {spotPct.toFixed(0)}% del camino{" "}
+            <b className={spotPct >= 50 ? "text-short-hi" : "text-long-hi"}>
+              {spotPct >= 50 ? "→ hacia la resistencia" : "→ hacia el soporte"}
+            </b>
+          </span>
+        </div>
+
+        <div className="relative mt-4 h-10">
+          {/* pista con degradado soporte→resistencia */}
+          <div
+            className="absolute inset-x-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full"
+            style={{ background: "linear-gradient(90deg,#157a5c,#1d3a33 30%,#15233c 50%,#3a2530 70%,#8f1f36)" }}
+          />
+          {/* ticks de todos los niveles del grupo */}
+          {filtered.map((l) => {
+            const p = clampPct(((l.price - lo) / span) * 100);
+            return (
+              <div
+                key={`tick-${l.short}-${l.price.toFixed(0)}`}
+                className="absolute top-1/2 h-4 w-px -translate-y-1/2 opacity-60"
+                style={{ left: `${p}%`, background: KIND_COLOR[l.kind] }}
+                title={`${l.short} · ${fmtUsd(l.price)}`}
+              />
+            );
+          })}
+          {/* marcador del spot */}
+          <div className="absolute top-0 z-10 -translate-x-1/2" style={{ left: `${spotPct}%` }}>
+            <div className="mx-auto flex h-10 w-[3px] flex-col items-center justify-center">
+              <span className="font-mono text-[9px] font-700 tabular-nums text-warn">SPOT</span>
+              <div className="mt-0.5 h-5 w-[3px] rounded-full bg-warn shadow-[0_0_10px_rgba(255,181,71,0.9)]" />
             </div>
           </div>
         </div>
-        <div className="flex items-center justify-between rounded-lg border border-long/40 bg-long/[0.06] px-4 py-3 transition-transform duration-200 hover:-translate-y-0.5">
-          <div>
-            <div className="panel-tag">soporte más cercano</div>
-            <div className="mt-0.5 font-mono text-xl font-700 tabular-nums text-long-hi">
-              {nearestBelow ? fmtUsd(nearestBelow.price) : "—"}
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="font-mono text-[11px] text-long-hi">{nearestBelow ? nearestBelow.short : ""}</div>
-            <div className="font-mono text-[11px] tabular-nums text-mist">
-              {nearestBelow ? `${nearestBelow.distancePct.toFixed(2)}%` : ""}
-            </div>
-          </div>
+
+        {/* extremos: soporte y resistencia más cercanos */}
+        <div className="mt-2 flex items-center justify-between font-mono text-[10.5px] tabular-nums">
+          <span className="text-long-hi">
+            ▲ {nearestBelow ? nearestBelow.short : "SOPORTE"} · {fmtUsd(lo)}
+            {toSup !== null && <span className="ml-1 text-dusk">({toSup.toFixed(2)}% abajo)</span>}
+          </span>
+          <span className="text-short-hi">
+            {toRes !== null && <span className="mr-1 text-dusk">({toRes.toFixed(2)}% arriba)</span>}
+            {nearestAbove ? nearestAbove.short : "RESISTENCIA"} · {fmtUsd(hi)} ▼
+          </span>
         </div>
       </div>
 
       {/* escalera de niveles */}
-      <div className="slim-scroll mt-4 flex-1 space-y-1 overflow-y-auto pr-1" style={{ maxHeight: 360, minHeight: 220 }}>
+      <div className="slim-scroll mt-4 flex-1 space-y-1 overflow-y-auto pr-1" style={{ maxHeight: 320, minHeight: 200 }}>
         {filtered.map((l) => {
           const isNearest = l === nearestAbove || l === nearestBelow;
           const color = KIND_COLOR[l.kind];
@@ -119,12 +148,6 @@ export function KeyLevelsPanel({ levels, spot }: { levels: KeyLevel[]; spot: num
             CARGANDO NIVELES…
           </div>
         )}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 border-t border-line/50 pt-3 font-mono text-[10.5px] text-dusk">
-        <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-short" /> resistencia (sobre el spot)</span>
-        <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-long" /> soporte (bajo el spot)</span>
-        <span className="ml-auto">los niveles se recalculan con cada vela</span>
       </div>
     </div>
   );
