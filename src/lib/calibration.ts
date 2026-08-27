@@ -8,21 +8,27 @@
 
 import type { FactorStat } from "./backtest";
 
-/** Pesos base del motor (deben reflejar engine.ts) */
+/** Pesos base del motor (deben reflejar engine.ts) — 18 factores, suma = 1.00 */
 export const BASE_WEIGHTS: Record<string, number> = {
-  funding: 0.11,
-  fundingTrend: 0.06,
-  global: 0.08,
-  top: 0.09,
-  pools: 0.16,
-  oi: 0.07,
-  oiSlope: 0.07,
-  taker: 0.07,
-  live: 0.06,
-  cvd: 0.06,
-  premium: 0.05,
-  mtf: 0.06,
-  momentum: 0.06,
+  funding: 0.09,
+  fundingTrend: 0.05,
+  global: 0.07,
+  top: 0.07,
+  pools: 0.13,
+  oi: 0.06,
+  oiSlope: 0.06,
+  taker: 0.06,
+  live: 0.05,
+  cvd: 0.05,
+  premium: 0.04,
+  mtf: 0.05,
+  momentum: 0.05,
+  // refuerzos añadidos
+  book: 0.05,
+  sweep: 0.04,
+  xCfunding: 0.03,
+  fundingWindow: 0.03,
+  liqVelocity: 0.02,
 };
 
 export interface Calibration {

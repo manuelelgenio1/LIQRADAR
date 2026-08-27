@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMarket, TF_CONFIG, type Timeframe } from "./hooks/useMarket";
 import { useReveal } from "./hooks/useReveal";
-import { estimateLiquidationMap, computeVerdict, atrOf, computeCvd } from "./lib/engine";
+import { estimateLiquidationMap, computeVerdict, atrOf, computeCvd, fundingProximity, detectSweep, liqVelocityScore } from "./lib/engine";
 import {
   evaluatePredictions,
   loadPredictions,
@@ -144,10 +144,15 @@ export default function App() {
       fastSlopePct,
       slowSlopePct,
       momPct,
+      bookImbalance: market.bookImbalance,
+      xCfundingGap: market.xCfundingGap,
+      fundingWindow: fundingProximity(Date.now()),
+      sweep: detectSweep(market.candles, clusters),
+      liqVelocity: liqVelocityScore(market.liqEvents, Date.now()),
       weights: calibration?.weights,
     });
     return { bins, longPool, shortPool, clusters, cvd, verdict, updatedAt: Date.now() };
-  }, [market.candles, market.oi, market.fundingRate, market.fundingTrend, market.globalRatio, market.topRatio, market.takerRatio, market.oiChange24h, market.oiSlope5m, market.premium, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs, calibration]);
+  }, [market.candles, market.liqEvents, market.bookImbalance, market.xCfundingGap, market.oi, market.fundingRate, market.fundingTrend, market.globalRatio, market.topRatio, market.takerRatio, market.oiChange24h, market.oiSlope5m, market.premium, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs, calibration]);
 
   /* ---------- track record del modelo ---------- */
   const [preds, setPreds] = useState<Prediction[]>(() => loadPredictions());
@@ -610,7 +615,7 @@ export default function App() {
                   <li><span className="text-long">▸</span> Binance USDⓈ-M — funding, interés abierto, ratios L/S</li>
                   <li><span className="text-long">▸</span> Binance Futuros — stream <span className="text-fog">!forceOrder</span> de liquidaciones</li>
                   <li><span className="text-long">▸</span> Binance Spot — libro de órdenes L2 (muros y desequilibrio)</li>
-                  <li><span className="text-long">▸</span> OKX y Bybit — precio, funding y OI para el radar multi-exchange</li>
+                  <li><span className="text-long">▸</span> OKX y Bybit — precio, funding y OI (su funding también entra al motor como divergencia cross-exchange)</li>
                   <li><span className="text-long">▸</span> Webhook propio — alertas francotirador hacia Telegram/Discord</li>
                   <li><span className="text-warn">▸</span> Sin conexión: simulador coherente para seguir practicando</li>
                 </ul>

@@ -187,6 +187,17 @@ export async function fetchOpenInterest(): Promise<{ oi: number; change24hPct: n
   return { oi: now, change24hPct: past > 0 ? ((now - past) / past) * 100 : 0 };
 }
 
+/* Desequilibrio del libro de órdenes: volumen bid vs ask en los 25 mejores niveles.
+   Devuelve ratio bid/ask (≈1 equilibrado, >1 muro comprador, <1 muro vendedor). */
+export async function fetchBookRatio(): Promise<number> {
+  const d = await getJson<{ bids: [string, string][]; asks: [string, string][] }>(
+    `${SPOT}/api/v3/depth?symbol=BTCUSDT&limit=25`
+  );
+  const bidVol = d.bids.reduce((a, [, q]) => a + Number(q), 0);
+  const askVol = d.asks.reduce((a, [, q]) => a + Number(q), 0);
+  return askVol > 0 ? bidVol / askVol : 1;
+}
+
 export async function fetchRatios(): Promise<{ global: number; top: number }> {
   const [g, t] = await Promise.all([
     getJson<{ longShortRatio: string }[]>(

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Candle, LiqEvent } from "../lib/engine";
 import {
   connectWs,
+  fetchBookRatio,
   fetchFunding,
   fetchFundingHistory,
   fetchKlines,
@@ -16,6 +17,7 @@ import {
   simTick,
   type OIPoint,
 } from "../lib/binance";
+import { fetchBybit, fetchOkx } from "../lib/exchanges";
 
 export type Timeframe = "12h" | "24h" | "72h" | "7d";
 
@@ -45,6 +47,8 @@ export interface MarketData {
   takerRatio: number;
   takerTrend: number;
   premium: number;
+  bookImbalance: number; // ratio bid/ask del libro (≈1)
+  xCfundingGap: number; // funding Binance − media(OKX+Bybit)
   candles: Candle[];
   oiHistory: OIPoint[];
   liqEvents: LiqEvent[];
@@ -66,6 +70,8 @@ export function useMarket(tf: Timeframe): MarketData {
   const [oi, setOi] = useState({ oi: 0, change: 0, slope5m: 0 });
   const [ratios, setRatios] = useState({ global: 1.05, top: 0.97 });
   const [taker, setTaker] = useState({ ratio: 1, trend: 0 });
+  const [bookImbalance, setBookImbalance] = useState(1);
+  const [xCfundingGap, setXCfundingGap] = useState(0);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [oiHistory, setOiHistory] = useState<OIPoint[]>([]);
   const [liqEvents, setLiqEvents] = useState<LiqEvent[]>([]);
@@ -76,6 +82,8 @@ export function useMarket(tf: Timeframe): MarketData {
   const spotRef = useRef(spot);
   spotRef.current = spot;
   const simBiasRef = useRef(0.52);
+  const fundingRef = useRef(funding.rate);
+  fundingRef.current = funding.rate;
 
   /* ---------- velas según timeframe ---------- */
   useEffect(() => {
@@ -150,6 +158,26 @@ export function useMarket(tf: Timeframe): MarketData {
         if (alive) setTaker({ ratio: tk.ratio, trend: tk.trend });
       } catch {
         ok = false;
+      }
+      // libro de órdenes (no bloquea el estado de métricas si falla)
+      try {
+        const br = await fetchBookRatio();
+        if (alive) setBookImbalance(br);
+      } catch {
+        /* opcional */
+      }
+      // funding cross-exchange: Binance vs media(OKX+Bybit) — no bloquea si falla
+      try {
+        const [okx, bybit] = await Promise.allSettled([fetchOkx(), fetchBybit()]);
+        const others: number[] = [];
+        if (okx.status === "fulfilled") others.push(okx.value.fundingRate);
+        if (bybit.status === "fulfilled") others.push(bybit.value.fundingRate);
+        if (alive && others.length > 0) {
+          const avgOther = others.reduce((a, b) => a + b, 0) / others.length;
+          setXCfundingGap(fundingRef.current - avgOther);
+        }
+      } catch {
+        /* opcional */
       }
       if (alive) {
         setSources((s) => ({ ...s, metrics: ok ? "live" : "sim" }));
@@ -279,6 +307,8 @@ export function useMarket(tf: Timeframe): MarketData {
     takerRatio: taker.ratio,
     takerTrend: taker.trend,
     premium: funding.premium,
+    bookImbalance,
+    xCfundingGap,
     candles,
     oiHistory,
     liqEvents,

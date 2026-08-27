@@ -105,6 +105,12 @@ export interface VerdictInput {
   fastSlopePct: number; // tendencia del tercio reciente (%)
   slowSlopePct: number; // tendencia de toda la ventana (%)
   momPct?: number; // impulso de las últimas velas (%) → evita llamar giros prematuros
+  // --- refuerzos añadidos ---
+  bookImbalance: number; // ratio bid/ask del libro (≈1 = equilibrado, >1 = muro comprador)
+  xCfundingGap: number; // funding Binance − media(OKX+Bybit) → sesgo de apalancamiento del venue
+  fundingWindow: number; // 0..1 proximidad al settlement de funding (cada 8h UTC)
+  sweep: number; // −1..1 detección de barrida reciente (mecha a través de un cluster)
+  liqVelocity: number; // −1..1 aceleración de liquidaciones en los últimos minutos
   weights?: Record<string, number>; // pesos calibrados (opcional, sobrescriben los base)
 }
 
@@ -301,6 +307,62 @@ export function atrOf(candles: Candle[]): number {
 }
 
 /* ------------------------------------------------------------
+   Auxiliares de los factores de refuerzo
+   ------------------------------------------------------------ */
+
+/* Proximidad al settlement de funding (0, 8 y 16 UTC). Devuelve 0..1
+   donde 1 = justo en la ventana (±1h). */
+export function fundingProximity(nowMs: number): number {
+  const h = (nowMs / 3600_000) % 8; // horas desde el último settlement
+  const dist = Math.min(h, 8 - h); // distancia al settlement más cercano
+  return Math.max(0, 1 - dist / 1.25);
+}
+
+/* Detección de barrida: en las últimas velas, ¿la mecha atravesó el cluster
+   más cercano y el cierre volvió? >0 = barrieron shorts (alcista gastado),
+   <0 = barrieron longs (bajista gastado). */
+export function detectSweep(candles: Candle[], clusters: Cluster[], lookback = 6): number {
+  if (candles.length < lookback + 1 || clusters.length === 0) return 0;
+  const spot = candles[candles.length - 1].close;
+  // cluster más cercano al spot
+  const near = clusters.reduce((best, c) =>
+    Math.abs(c.price - spot) < Math.abs(best.price - spot) ? c : best
+  );
+  let out = 0;
+  for (let i = Math.max(0, candles.length - lookback); i < candles.length; i++) {
+    const c = candles[i];
+    if (near.price > spot) {
+      // cluster arriba (shorts): mecha que lo cruza y cierra abajo = barrida de shorts
+      if (c.high >= near.price && c.close < near.price) out = Math.max(out, 0.8);
+    } else {
+      // cluster abajo (longs): mecha que lo cruza y cierra arriba = barrida de longs
+      if (c.low <= near.price && c.close > near.price) out = Math.min(out === 0 ? -0.8 : out, -0.8);
+    }
+  }
+  return out;
+}
+
+/* Velocidad de liquidación: compara el desequilibrio long/short de los últimos
+   minutos contra el de toda la sesión. >0 = se están quemando longs ahora. */
+export function liqVelocityScore(events: LiqEvent[], nowMs: number, recentMs = 5 * 60_000): number {
+  if (events.length < 3) return 0;
+  let rL = 0, rS = 0, tL = 0, tS = 0;
+  for (const e of events) {
+    const isLong = e.side === "long";
+    if (isLong) tL += e.notional; else tS += e.notional;
+    if (nowMs - e.time <= recentMs) {
+      if (isLong) rL += e.notional; else rS += e.notional;
+    }
+  }
+  const rt = rL + rS;
+  const tt = tL + tS;
+  if (rt < 100_000 || tt === 0) return 0; // sin cascada reciente significativa
+  const recentImb = (rL - rS) / rt;
+  const totalImb = (tL - tS) / tt;
+  return clamp((recentImb - totalImb) * 1.6 + recentImb * 0.5);
+}
+
+/* ------------------------------------------------------------
    Motor de veredicto: ¿short squeeze (arriba) o long squeeze (abajo)?
    ------------------------------------------------------------ */
 export function computeVerdict(inp: VerdictInput): Verdict {
@@ -326,7 +388,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? `Longs pagan ${(inp.fundingRate * 100).toFixed(4)}% c/8h → multitud long`
         : `Shorts pagan ${(Math.abs(inp.fundingRate) * 100).toFixed(4)}% c/8h → multitud short`,
     score: fScore,
-    weight: 0.11,
+    weight: 0.09,
   });
   if (Math.abs(inp.fundingRate) >= 0.0003) {
     warnings.push({
@@ -350,7 +412,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
           ? `Funding subiendo (+${(inp.fundingTrend * 100).toFixed(4)}%): se apilan más longs`
           : `Funding cayendo (${(inp.fundingTrend * 100).toFixed(4)}%): se apilan más shorts`,
     score: ftScore,
-    weight: 0.06,
+    weight: 0.05,
   });
 
   // 3 · Ratio global de cuentas
@@ -360,7 +422,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     label: "Cuentas retail long/short",
     detail: `${inp.globalRatio.toFixed(2)}× → ${inp.globalRatio > 1 ? "retail inclinado a LONG" : "retail inclinado a SHORT"}`,
     score: gScore,
-    weight: 0.08,
+    weight: 0.07,
   });
 
   // 4 · Top traders (posiciones)
@@ -370,7 +432,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     label: "Posiciones de top traders",
     detail: `Ratio ${inp.topRatio.toFixed(2)} → ${inp.topRatio > 1 ? "ballenas en LONG" : "ballenas en SHORT"}`,
     score: tScore,
-    weight: 0.09,
+    weight: 0.07,
   });
 
   // 5 · Pools de liquidación con magnetismo por decaimiento de distancia
@@ -387,7 +449,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? `${poolX.toFixed(1)}× más shorts ARRIBA (magnetismo ${(decayRaw * 100).toFixed(0)}% neto) → imán alcista`
         : `${poolX.toFixed(1)}× más longs ABAJO (magnetismo ${(decayRaw * 100).toFixed(0)}% neto) → imán bajista`,
     score: pScore,
-    weight: 0.16,
+    weight: 0.13,
   });
 
   // 6 · Interés abierto + tendencia 24h
@@ -397,7 +459,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     label: "Interés abierto + impulso 24h",
     detail: `OI ${inp.oiChange24h >= 0 ? "+" : ""}${inp.oiChange24h.toFixed(1)}% · precio ${inp.priceChange24h >= 0 ? "+" : ""}${inp.priceChange24h.toFixed(1)}%`,
     score: oScore,
-    weight: 0.07,
+    weight: 0.06,
   });
 
   // 7 · Pendiente del OI en 5m: apalancamiento fresco entrando AHORA
@@ -416,7 +478,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   } else {
     osDetail = `OI ${inp.oiSlope5m >= 0 ? "+" : ""}${inp.oiSlope5m.toFixed(2)}% en 2.5h → apalancamiento estable`;
   }
-  factors.push({ id: "oiSlope", label: "OI en tiempo real (5m)", detail: osDetail, score: osScore, weight: 0.07 });
+  factors.push({ id: "oiSlope", label: "OI en tiempo real (5m)", detail: osDetail, score: osScore, weight: 0.06 });
 
   // 8 · Flujo de takers en futuros (quién cruza el spread)
   const tkScore = clamp((1 - inp.takerRatio) * 2.2);
@@ -428,7 +490,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? `Ratio ${inp.takerRatio.toFixed(2)} → dominan las compras agresivas (multitud long)`
         : `Ratio ${inp.takerRatio.toFixed(2)} → dominan las ventas agresivas (multitud short)`,
     score: tkScore,
-    weight: 0.07,
+    weight: 0.06,
   });
 
   // 9 · Liquidaciones en vivo: si ya liquidaron longs, el combustible bajista se gastó
@@ -445,7 +507,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
           ? "Ya se liquidaron más LONGS → combustible bajista gastado"
           : "Ya se liquidaron más SHORTS → combustible alcista gastado",
     score: lScore,
-    weight: 0.06,
+    weight: 0.05,
   });
 
   // 10 · Delta de takers spot (CVD): compra agresiva = multitud long apilada
@@ -461,7 +523,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
           ? "Divergencia: precio baja pero absorben la venta → vendedores agotados"
           : `Compra neta ${(inp.cvdPct * 100).toFixed(1)}% del volumen → ${inp.cvdPct > 0.02 ? "multitud comprando en ask" : inp.cvdPct < -0.02 ? "multitud vendiendo en bid" : "flujo equilibrado"}`,
     score: cvdScore,
-    weight: 0.06,
+    weight: 0.05,
   });
   if (inp.cvdDiv === "bear") {
     warnings.push({ tone: "danger", text: "Divergencia CVD bajista: el precio sube sin compradores agresivos — combustible de long squeeze activo" });
@@ -481,7 +543,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
           ? `Futuros ${(inp.premium * 100).toFixed(3)}% sobre el spot → longs apalancados pagan la prima`
           : `Futuros ${(inp.premium * 100).toFixed(3)}% bajo el spot → shorts apalancados dominan`,
     score: prScore,
-    weight: 0.05,
+    weight: 0.04,
   });
 
   // 12 · Confluencia multi-plazo: tendencia rápida vs tendencia de fondo
@@ -496,7 +558,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
       ? `Tendencia reciente (${fast >= 0 ? "+" : ""}${fast.toFixed(1)}%) y de fondo (${slow >= 0 ? "+" : ""}${slow.toFixed(1)}%) ALINEADAS`
       : `Tendencia reciente (${fast >= 0 ? "+" : ""}${fast.toFixed(1)}%) vs fondo (${slow >= 0 ? "+" : ""}${slow.toFixed(1)}%) en conflicto`,
     score: cfScore,
-    weight: 0.06,
+    weight: 0.05,
   });
 
   // 13 · Impulso de las últimas velas: confirma el squeeze en curso y evita llamar giros prematuros
@@ -512,7 +574,83 @@ export function computeVerdict(inp: VerdictInput): Verdict {
           ? `Impulso alcista +${momPct.toFixed(2)}% → el squeeze alcista ya está en marcha`
           : `Impulso bajista ${momPct.toFixed(2)}% → la caza de longs ya está en marcha`,
     score: momScore,
-    weight: 0.06,
+    weight: 0.05,
+  });
+
+  // 14 · Presión del libro de órdenes: liquidez pasiva apilada de un lado
+  const bk = inp.bookImbalance ?? 1;
+  const bkScore = clamp(-(bk - 1) * 1.4);
+  factors.push({
+    id: "book",
+    label: "Presión del libro (bid/ask)",
+    detail:
+      Math.abs(bk - 1) < 0.15
+        ? "Libro equilibrado: sin muro dominante"
+        : bk > 1
+          ? `Muro comprador ${bk.toFixed(2)}× → liquidez pasiva LONG apilada (combustible bajista)`
+          : `Muro vendedor ${(1 / bk).toFixed(2)}× → liquidez pasiva SHORT apilada (combustible alcista)`,
+    score: bkScore,
+    weight: 0.05,
+  });
+
+  // 15 · Barrida reciente: mecha a través de un cluster con cierre de vuelta = combustible gastado
+  const sw = inp.sweep ?? 0;
+  factors.push({
+    id: "sweep",
+    label: "Barrida de liquidez reciente",
+    detail:
+      Math.abs(sw) < 0.25
+        ? "Sin barrida reciente: la liquidez cercana sigue intacta"
+        : sw > 0
+          ? "Barrida de SHORTS detectada (mecha arriba) → el squeeze alcista ya descargó"
+          : "Barrida de LONGS detectada (mecha abajo) → la caza de longs ya descargó",
+    score: clamp(sw),
+    weight: 0.04,
+  });
+
+  // 16 · Divergencia de funding entre exchanges: apalancamiento concentrado en un venue
+  const xg = inp.xCfundingGap ?? 0;
+  const xgScore = clamp(-xg / 0.00025);
+  factors.push({
+    id: "xCfunding",
+    label: "Funding cross-exchange",
+    detail:
+      Math.abs(xg) < 0.00005
+        ? "Funding alineado entre Binance/OKX/Bybit"
+        : xg > 0
+          ? `Binance paga +${(xg * 100).toFixed(4)}% más → longs concentrados en Binance`
+          : `Binance paga ${(xg * 100).toFixed(4)}% menos → shorts concentrados en Binance`,
+    score: xgScore,
+    weight: 0.03,
+  });
+
+  // 17 · Ventana de funding: los settlements (cada 8h UTC) concentran sacudidas
+  const fw = inp.fundingWindow ?? 0;
+  const fwScore = clamp(-Math.sign(inp.fundingRate) * fw * 0.9);
+  factors.push({
+    id: "fundingWindow",
+    label: "Ventana de settlement",
+    detail:
+      fw < 0.25
+        ? "Lejos del settlement de funding: sin presión horaria"
+        : `A ${(fw * 100).toFixed(0)}% de la ventana → riesgo de flush ${inp.fundingRate >= 0 ? "bajista (longs pagan)" : "alcista (shorts pagan)"}`,
+    score: fwScore,
+    weight: 0.03,
+  });
+
+  // 18 · Velocidad de liquidación: cascada activa en los últimos minutos
+  const lv = inp.liqVelocity ?? 0;
+  factors.push({
+    id: "liqVelocity",
+    label: "Velocidad de liquidación",
+    detail:
+      Math.abs(lv) < 0.2
+        ? "Ritmo de liquidaciones estable"
+        : lv > 0
+          ? "Cascada de LONGS acelerándose → el combustible bajista se está quemando"
+          : "Cascada de SHORTS acelerándose → el combustible alcista se está quemando",
+    score: clamp(lv),
+    weight: 0.02,
   });
 
   // recalibración: si hay pesos calibrados (desde el laboratorio), se aplican aquí

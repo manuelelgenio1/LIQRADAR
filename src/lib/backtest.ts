@@ -240,6 +240,13 @@ export async function runWalkForward(
       fastSlopePct: slopes.fast,
       slowSlopePct: slopes.slow,
       momPct,
+      // los factores de refuerzo necesitan datos en vivo (libro, cross-exchange,
+      // liquidaciones) → en el backtest histórico se mantienen neutros
+      bookImbalance: 1,
+      xCfundingGap: 0,
+      fundingWindow: 0,
+      sweep: 0,
+      liqVelocity: 0,
     });
 
     if (v.direction === "neutral") {

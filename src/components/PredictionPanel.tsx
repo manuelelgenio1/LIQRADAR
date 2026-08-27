@@ -144,8 +144,10 @@ export function PredictionPanel({ v, updatedAt }: { v: Verdict; updatedAt: numbe
 
       {/* factores */}
       <div>
-        <div className="panel-tag mb-2">factores del modelo · contribución al sesgo</div>
-        <div className="flex flex-col gap-1.5">
+        <div className="panel-tag mb-2">
+          factores del modelo · contribución al sesgo <span className="text-mist">({v.factors.length})</span>
+        </div>
+        <div className="slim-scroll flex max-h-[340px] flex-col gap-1 overflow-y-auto pr-1">
           {v.factors.map((f) => {
             const w = Math.abs(f.score) * f.weight * 100;
             const pos = f.score >= 0;

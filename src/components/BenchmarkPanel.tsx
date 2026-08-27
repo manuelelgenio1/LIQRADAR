@@ -40,7 +40,7 @@ const ROWS: Row[] = [
   },
   {
     feature: "Veredicto direccional (long/short) con objetivo e invalidación",
-    detail: "Motor de 12 factores ponderados con imán de liquidez, nivel que anula el escenario y ventana temporal.",
+    detail: "Motor de 18 factores ponderados (auto-calibrable) con imán de liquidez, nivel que anula el escenario y ventana temporal.",
     cells: ["yes", "no", "no", "partial"],
   },
   {
