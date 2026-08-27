@@ -21,6 +21,7 @@ import { BacktestLab } from "./components/BacktestLab";
 import { RumboGauge } from "./components/RumboGauge";
 import { LiqHeatmap } from "./components/LiqHeatmap";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
+import { FlipAlert, type FlipInfo } from "./components/FlipAlert";
 
 const STEPS = [
   {
@@ -137,6 +138,26 @@ export default function App() {
     }
   }, [preds, roundedSpot]);
 
+  /* ---------- alerta de cambio de rumbo LONG ↔ SHORT ---------- */
+  const [flip, setFlip] = useState<FlipInfo | null>(null);
+  const [flipCount, setFlipCount] = useState(0);
+  const prevDirRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!analysis) return;
+    const dir = analysis.verdict.direction;
+    const prev = prevDirRef.current;
+    if (prev !== null && prev !== dir && dir !== "neutral" && prev !== "neutral") {
+      setFlip({
+        dir: dir as "up" | "down",
+        at: Date.now(),
+        spot: roundedSpot,
+        target: analysis.verdict.target?.price ?? null,
+      });
+      setFlipCount((c) => c + 1);
+    }
+    prevDirRef.current = dir;
+  }, [analysis, roundedSpot]);
+
   const r0 = useReveal();
   const r1 = useReveal();
   const r2 = useReveal();
@@ -149,6 +170,8 @@ export default function App() {
     <div className="relative min-h-screen font-body">
       <div className="ambient" />
       <div className="scanline" />
+
+      <FlipAlert flip={flip} onDismiss={() => setFlip(null)} />
 
       <div className="relative z-10">
         <TopBar m={market} />
@@ -286,6 +309,7 @@ export default function App() {
               a={analysis}
               rangePct={TF_CONFIG[tf].range}
               preds={preds}
+              flips={flipCount}
             />
           </section>
 

@@ -73,7 +73,7 @@ export function AccumulationPanel(p: Props) {
     <div className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="panel-tag">04 · posicionamiento</div>
+          <div className="panel-tag">05 · posicionamiento</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
             ¿Quién está amontonado?
           </h2>

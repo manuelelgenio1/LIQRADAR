@@ -23,6 +23,7 @@ interface Props {
   a: AnalysisLite | null;
   rangePct: number;
   preds: Prediction[];
+  flips: number;
 }
 
 type Status = "ok" | "warn" | "fail";
@@ -96,7 +97,7 @@ function CheckRow({ c }: { c: Check }) {
   );
 }
 
-export function DiagnosticsPanel({ m, a, rangePct, preds }: Props) {
+export function DiagnosticsPanel({ m, a, rangePct, preds, flips }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const lastPriceAtRef = useRef(Date.now());
 
@@ -233,6 +234,16 @@ export function DiagnosticsPanel({ m, a, rangePct, preds }: Props) {
         : `${preds.length} predicciones registradas · ${closed.length} cerradas contra el precio · acierto ${closed.length > 0 ? Math.round((hits / closed.length) * 100) + "%" : "—"}`,
   });
 
+  engine.push({
+    id: "alerts",
+    label: "Alerta de cambio de rumbo (LONG ↔ SHORT)",
+    status: "ok",
+    detail:
+      flips === 0
+        ? "armada y vigilando · aún sin giros LONG↔SHORT en esta sesión (normal si el mercado mantiene tendencia)"
+        : `${flips} ${flips === 1 ? "giro detectado" : "giros detectados"} · la notificación flotante se dispara en cada reversión real del veredicto`,
+  });
+
   const all = [...sources, ...engine];
   const fails = all.filter((c) => c.status === "fail").length;
   const warns = all.filter((c) => c.status === "warn").length;
@@ -246,7 +257,7 @@ export function DiagnosticsPanel({ m, a, rangePct, preds }: Props) {
     <div className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="panel-tag">07 · diagnóstico en vivo</div>
+          <div className="panel-tag">08 · diagnóstico en vivo</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
             Prueba de integridad: ¿está funcionando de verdad?
           </h2>

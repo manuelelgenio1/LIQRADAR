@@ -98,7 +98,7 @@ export function BacktestLab({ spot }: { spot: number }) {
     <div className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="panel-tag">06 · laboratorio de validación</div>
+          <div className="panel-tag">07 · laboratorio de validación</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
             ¿Funciona de verdad el radar? Pruébalo contra la historia
           </h2>
