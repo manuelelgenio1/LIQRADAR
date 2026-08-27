@@ -1,6 +1,19 @@
+import { useEffect, useState } from "react";
 import { fmtUsd } from "../lib/engine";
 import { CONFLUENCE_TFS, type ConfluenceState } from "../hooks/useConfluence";
 import type { TfBias } from "../lib/engine";
+
+/* Reloj "hace Xs" que late cada segundo — prueba visual de que el panel está vivo */
+function TimeAgo({ t }: { t: number }) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => force((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  if (!t) return <span>—</span>;
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  return <span>{s < 3 ? "ahora mismo" : `hace ${s}s`}</span>;
+}
 
 /* ============================================================
    Confluencia Multi-Timeframe: corre el motor en 12h, 24h y 72h
@@ -15,7 +28,8 @@ const DIR_COLOR: Record<TfBias["direction"], string> = {
 };
 
 export function ConfluencePanel({ spot, confluence }: { spot: number; confluence: ConfluenceState }) {
-  const { biases, loading, sim, grade, gradeLabel, alignedDir } = confluence;
+  const { biases, tfStatus, loading, sim, anyLive, grade, gradeLabel, alignedDir, lastUpdated, refresh } = confluence;
+  const liveCount = CONFLUENCE_TFS.filter((t) => tfStatus[t.tf]?.ok).length;
   const R = 56;
   const C = 2 * Math.PI * R;
   const gradeColor = alignedDir === "up" ? "#2fd6a5" : alignedDir === "down" ? "#ff4d6d" : "#ffb547";
@@ -35,7 +49,32 @@ export function ConfluencePanel({ spot, confluence }: { spot: number; confluence
             esperar. Esta es la técnica que más filtra falsas señales — y ya está integrada en el índice de confiabilidad.
           </p>
         </div>
-        {sim && <span className="rounded-md border border-warn/40 bg-warn/10 px-2.5 py-1 font-mono text-[10px] text-warn">SIN DATOS · NEUTRO</span>}
+        <div className="flex flex-wrap items-center gap-2">
+          {sim ? (
+            <span className="rounded-md border border-warn/40 bg-warn/10 px-2.5 py-1 font-mono text-[10px] text-warn">
+              SIN DATOS · NEUTRO
+            </span>
+          ) : (
+            <span
+              className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 font-mono text-[10px]"
+              style={{ color: liveCount === 3 ? "#2fd6a5" : "#ffb547" }}
+            >
+              <span className="live-dot" style={{ background: "currentColor", color: "currentColor" }} />
+              {liveCount === 3 ? "EN VIVO · 3/3" : `PARCIAL · ${liveCount}/3`}
+            </span>
+          )}
+          <span className="rounded-md border border-line bg-ink-950/60 px-2.5 py-1 font-mono text-[10px] tabular-nums text-mist">
+            <TimeAgo t={lastUpdated} />
+          </span>
+          <button
+            onClick={refresh}
+            disabled={loading}
+            className="chip disabled:cursor-not-allowed disabled:opacity-50"
+            title="Recalcular los tres horizontes ahora"
+          >
+            {loading ? "⟳ CALCULANDO" : "⟳ ACTUALIZAR"}
+          </button>
+        </div>
       </div>
 
       <div className="mt-5 flex flex-col gap-5 lg:flex-row lg:items-stretch">
@@ -74,6 +113,7 @@ export function ConfluencePanel({ spot, confluence }: { spot: number; confluence
         <div className="flex flex-1 flex-col justify-center gap-3">
           {CONFLUENCE_TFS.map((t) => {
             const b = biases.find((x) => x.tf === t.tf);
+            const st = tfStatus[t.tf] ?? { candles: 0, ok: false };
             const pct = b ? (b.scorePct + 100) / 2 : 50;
             const color = b ? DIR_COLOR[b.direction] : "#5d7099";
             return (
@@ -85,13 +125,24 @@ export function ConfluencePanel({ spot, confluence }: { spot: number; confluence
                   </div>
                   <span className="font-mono text-[13px] font-700 tracking-widest" style={{ color, textShadow: `0 0 16px ${color}55` }}>
                     {loading ? "…" : b?.word}
-                    {b && b.direction !== "neutral" && (
+                    {b && (
                       <span className="ml-1.5 text-[10px] tabular-nums" style={{ color: "#93a5c8" }}>
-                        {b.scorePct > 0 ? "+" : ""}
-                        {b.scorePct}
+                        {loading ? "" : `${b.scorePct > 0 ? "+" : ""}${b.scorePct}`}
                       </span>
                     )}
                   </span>
+                </div>
+                {/* estado de los datos detrás de este horizonte */}
+                <div className="mt-1 flex items-center gap-1.5 font-mono text-[9px]">
+                  {loading ? (
+                    <span className="text-dusk">descargando velas…</span>
+                  ) : st.ok ? (
+                    <span className="text-long">
+                      {st.candles} velas reales · Binance <span aria-hidden>✓</span>
+                    </span>
+                  ) : (
+                    <span className="text-short">SIN DATOS · usa ⟳ ACTUALIZAR</span>
+                  )}
                 </div>
                 <div className="relative mt-2 h-2 rounded-full" style={{ background: "linear-gradient(90deg,#ff4d6d,#3a2530 34%,#15233c 50%,#1d3a33 66%,#2fd6a5)" }}>
                   <div
@@ -117,7 +168,14 @@ export function ConfluencePanel({ spot, confluence }: { spot: number; confluence
           Regla práctica: opera solo cuando el acuerdo sea <b className="text-fog">2/3 o 3/3</b> y en la dirección de la
           mayoría; con 1/3 o sin acuerdo, el mercado está en rango y los barridos fallan más.
         </span>
-        <span className="ml-auto">actualizado cada 90s</span>
+        <span className="ml-auto tabular-nums">
+          {anyLive ? (
+            <span className="text-long">{liveCount}/3 horizontes con datos reales</span>
+          ) : (
+            <span className="text-warn">sin datos · revisa tu conexión a Binance</span>
+          )}{" "}
+          · auto-refresh 90s
+        </span>
       </p>
     </div>
   );
