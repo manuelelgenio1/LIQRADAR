@@ -34,6 +34,7 @@ import { BenchmarkPanel } from "./components/BenchmarkPanel";
 import { ConfluencePanel } from "./components/ConfluencePanel";
 import { ExchangeRadarPanel } from "./components/ExchangeRadarPanel";
 import { FundingHeatmap } from "./components/FundingHeatmap";
+import { AgentBridgePanel } from "./components/AgentBridgePanel";
 import { SectionGroup } from "./components/SectionGroup";
 import { MiniNav, type ZoneDef } from "./components/MiniNav";
 import { AlertCenter, type SniperCfg, type PriceLevel } from "./components/AlertCenter";
@@ -457,6 +458,7 @@ export default function App() {
   const r15 = useReveal();
   const r16 = useReveal();
   const r17 = useReveal();
+  const r18 = useReveal();
 
   /* badges de estado para las cabeceras de zona */
   const vDir = analysis?.verdict.direction;
@@ -557,6 +559,19 @@ export default function App() {
               onAddLevel={addLevel}
               onRemoveLevel={removeLevel}
             />
+          </section>
+
+          {/* puente a Binance Agent OS */}
+          <section className="panel reveal mb-5" ref={r18}>
+            {analysis && (
+              <AgentBridgePanel
+                verdict={analysis.verdict}
+                spot={market.spot}
+                longPool={analysis.longPool}
+                shortPool={analysis.shortPool}
+                confluence={confluence}
+              />
+            )}
           </section>
           </SectionGroup>
 
@@ -859,6 +874,7 @@ export default function App() {
                   <li><span className="text-long">▸</span> Binance Futuros — stream <span className="text-fog">!forceOrder</span> de liquidaciones</li>
                   <li><span className="text-long">▸</span> Binance Spot — libro de órdenes L2 (muros y desequilibrio)</li>
                   <li><span className="text-long">▸</span> OKX y Bybit — precio, funding y OI (su funding también entra al motor como divergencia cross-exchange)</li>
+                  <li><span className="text-long">▸</span> Binance Agent OS — puente MCP para que tu agente de IA ejecute la señal (agent.binance.com/mcp/agentic)</li>
                   <li><span className="text-long">▸</span> Webhook propio — alertas francotirador hacia Telegram/Discord</li>
                   <li><span className="text-warn">▸</span> Sin conexión: simulador coherente para seguir practicando</li>
                 </ul>
