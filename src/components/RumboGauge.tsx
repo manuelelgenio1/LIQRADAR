@@ -10,12 +10,13 @@ export interface BiasPoint {
 
 /* Instrumento de rumbo: ¿hacia dónde va el mercado, LONG o SHORT?
    scorePct ∈ [-100, +100]:  + → sesgo alcista (LONG) · − → sesgo bajista (SHORT) */
-export function RumboGauge({ v, spot, history = [], magnetClose = false, magnetPrice }: {
+export function RumboGauge({ v, spot, history = [], magnetClose = false, magnetPrice, reliability = null }: {
   v: Verdict;
   spot: number;
   history?: BiasPoint[];
   magnetClose?: boolean;
   magnetPrice?: number | null;
+  reliability?: number | null;
 }) {
   const angle = (Math.max(-100, Math.min(100, v.scorePct)) / 100) * 84;
   const dir = v.direction;
@@ -160,6 +161,29 @@ export function RumboGauge({ v, spot, history = [], magnetClose = false, magnetP
               <span className="font-700 text-fog">{v.windowH[0]}–{v.windowH[1]}h</span>
             </div>
           </div>
+
+          {/* índice de confiabilidad de la señal */}
+          {reliability !== null && (
+            <div className="mt-4 max-w-xl">
+              <div className="flex items-baseline justify-between">
+                <span className="panel-tag">confiabilidad de esta señal</span>
+                <span className="font-mono text-[12px] font-700 tabular-nums" style={{ color: reliabilityColor(reliability) }}>
+                  {Math.round(reliability)} / 100
+                </span>
+              </div>
+              <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-ink-950/80">
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{ width: `${reliability}%`, background: `linear-gradient(90deg, ${reliabilityColor(reliability)}55, ${reliabilityColor(reliability)})` }}
+                />
+              </div>
+              <p className="mt-1.5 font-mono text-[9.5px] leading-relaxed text-dusk">
+                Combina la confianza del modelo, tu tasa de acierto histórica (si has corrido el laboratorio) y la frescura
+                de los datos. {reliability >= 65 ? "Señal sólida: sigue tu plan y el tamaño de posición." : reliability >= 45 ? "Señal media: reduce el tamaño o espera más confirmación." : "Señal débil: mejor esperar — la incertidumbre domina."}{" "}
+                Ninguna señal es una certeza.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -175,6 +199,10 @@ export function RumboGauge({ v, spot, history = [], magnetClose = false, magnetP
       </div>
     </div>
   );
+}
+
+function reliabilityColor(r: number): string {
+  return r >= 65 ? "#2fd6a5" : r >= 45 ? "#ffb547" : "#ff4d6d";
 }
 
 function BiasHistory({ points, color }: { points: BiasPoint[]; color: string }) {

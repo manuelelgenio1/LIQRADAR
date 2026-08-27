@@ -3,6 +3,7 @@ import type { BtResult, BtTest } from "../lib/backtest";
 import { runWalkForward, type BtPos } from "../lib/backtest";
 import { fetchKlines, simKlines, fetchTakerSeries, fetchAccountRatioSeries, fetchFundingSeries } from "../lib/binance";
 import { fmtUsd, type Candle } from "../lib/engine";
+import { calibrateWeights, loadCalibration, saveCalibration, clearCalibration, type Calibration } from "../lib/calibration";
 
 const HORIZONS = [6, 12, 24];
 
@@ -40,13 +41,18 @@ function OutcomeChip({ o }: { o: BtTest["outcome"] }) {
   );
 }
 
-export function BacktestLab({ spot }: { spot: number }) {
+export function BacktestLab({ spot, onCalibrated, onHitRate }: {
+  spot: number;
+  onCalibrated: (c: Calibration) => void;
+  onHitRate: (hitRate: number, samples: number) => void;
+}) {
   const [phase, setPhase] = useState<"idle" | "downloading" | "running" | "done" | "error">("idle");
   const [pct, setPct] = useState(0);
   const [stepNote, setStepNote] = useState("");
   const [errMsg, setErrMsg] = useState("");
   const [horizon, setHorizon] = useState(12);
   const [result, setResult] = useState<BtResult | null>(null);
+  const [activeCal, setActiveCal] = useState<Calibration | null>(() => loadCalibration());
   const spotRef = useRef(spot);
   spotRef.current = spot;
 
@@ -106,11 +112,34 @@ export function BacktestLab({ spot }: { spot: number }) {
       );
       setResult(res);
       setPhase("done");
+      if (res.hitRate !== null) onHitRate(res.hitRate, res.tests.length);
     } catch (e) {
       console.error("[LiqRadar] fallo del backtest:", e);
       setErrMsg(e instanceof Error ? e.message : String(e));
       setPhase("error");
     }
+  };
+
+  const applyCalibration = () => {
+    if (!result) return;
+    const weights = calibrateWeights(result.factorStats);
+    const cal: Calibration = {
+      weights,
+      savedAt: Date.now(),
+      samples: result.tests.length,
+      horizonH: result.horizonH,
+      sim: result.sim,
+    };
+    saveCalibration(cal);
+    setActiveCal(cal);
+    onCalibrated(cal);
+    console.info("[LiqRadar] calibración aplicada: pesos recalculados según acierto histórico");
+  };
+
+  const resetCalibration = () => {
+    clearCalibration();
+    setActiveCal(null);
+    console.info("[LiqRadar] calibración restablecida a los pesos base");
   };
 
   const r = result;
@@ -120,7 +149,7 @@ export function BacktestLab({ spot }: { spot: number }) {
     <div className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="panel-tag">09 · laboratorio de validación</div>
+          <div className="panel-tag">10 · laboratorio de validación</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
             ¿Funciona de verdad el radar? Pruébalo contra la historia
           </h2>
@@ -307,6 +336,31 @@ export function BacktestLab({ spot }: { spot: number }) {
             <span className="rounded-md border border-line bg-ink-950/70 px-2.5 py-1 font-mono text-[10px] tabular-nums text-mist">
               cobertura posicionamiento real: <b className={r.posCoverage > 50 ? "text-long-hi" : "text-warn"}>{r.posCoverage.toFixed(0)}%</b>
             </span>
+          </div>
+
+          {/* auto-calibración de pesos */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-warn/25 bg-warn/[0.04] p-3">
+            <div className="mr-auto min-w-[220px]">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[11px] font-700 tracking-widest text-warn">AUTO-CALIBRACIÓN</span>
+                {activeCal && (
+                  <span className="rounded-sm bg-warn/15 px-1.5 py-0.5 font-mono text-[9px] font-700 text-warn">ACTIVA</span>
+                )}
+              </div>
+              <p className="mt-0.5 text-[10.5px] leading-snug text-mist">
+                Recalcula los pesos del motor según el acierto histórico de cada factor: los que ganan suben, los que
+                fallan bajan. {activeCal ? `Aplicada con ${activeCal.samples} señales.` : "El modelo usa los pesos base."}
+              </p>
+            </div>
+            <button
+              onClick={applyCalibration}
+              className="rounded-md border border-warn/60 bg-warn/10 px-3.5 py-1.5 font-mono text-[11px] font-700 tracking-widest text-warn transition-all hover:bg-warn/20 hover:shadow-[0_0_16px_-4px_rgba(255,181,71,0.6)]"
+            >
+              ⚙ APLICAR AL MOTOR
+            </button>
+            {activeCal && (
+              <button onClick={resetCalibration} className="chip">restablecer</button>
+            )}
           </div>
           <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 md:grid-cols-2">
             {r.factorStats.map((f) => {

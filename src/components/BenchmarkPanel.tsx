@@ -107,7 +107,7 @@ export function BenchmarkPanel() {
     <div className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="panel-tag">11 · benchmark competitivo</div>
+          <div className="panel-tag">12 · benchmark competitivo</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
             Frente a las herramientas que usa el mercado
           </h2>
@@ -136,7 +136,7 @@ export function BenchmarkPanel() {
           <div className="font-mono text-[10px] font-700 tracking-widest text-long">HALLAZGO 02 · LA DIFERENCIA</div>
           <p className="mt-2 text-[12.5px] leading-relaxed text-mist">
             Esta es la única herramienta del cuadro que <b className="text-fog">mide su propio rendimiento</b>: el
-            laboratorio re-ejecuta el motor contra 41 días de historia (panel 09) y la auditoría en vivo (panel 10)
+            laboratorio re-ejecuta el motor contra 41 días de historia (panel 10) y la auditoría en vivo (panel 11)
             verifica cada dato. Las demás piden fe; esta enseña los números.
           </p>
         </div>

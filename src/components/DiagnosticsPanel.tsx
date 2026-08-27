@@ -214,6 +214,16 @@ export function DiagnosticsPanel({ m, a, rangePct, preds, flips }: Props) {
       detail: `Σ pesos = ${wSum.toFixed(3)} sobre ${v.factors.length} factores ponderados`,
     });
 
+    const cal = loadCalibration();
+    engine.push({
+      id: "calibration",
+      label: "Auto-calibración del motor",
+      status: cal ? "ok" : "warn",
+      detail: cal
+        ? `pesos recalibrados con ${cal.samples} señales históricas · ${new Date(cal.savedAt).toLocaleDateString("es-ES")}${cal.sim ? " · (datos simulados)" : ""}`
+        : "usando pesos base — corre el laboratorio y aplica la calibración para afinar el modelo",
+    });
+
     const bounded = Math.abs(v.scorePct) <= 100 && v.confidence >= 0 && v.confidence <= 100;
     engine.push({
       id: "bounds",
@@ -265,7 +275,7 @@ export function DiagnosticsPanel({ m, a, rangePct, preds, flips }: Props) {
     <div className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="panel-tag">10 · diagnóstico en vivo</div>
+          <div className="panel-tag">11 · diagnóstico en vivo</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
             Prueba de integridad: ¿está funcionando de verdad?
           </h2>

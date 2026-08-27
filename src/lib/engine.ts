@@ -91,6 +91,7 @@ export interface VerdictInput {
   fastSlopePct: number; // tendencia del tercio reciente (%)
   slowSlopePct: number; // tendencia de toda la ventana (%)
   momPct?: number; // impulso de las últimas velas (%) → evita llamar giros prematuros
+  weights?: Record<string, number>; // pesos calibrados (opcional, sobrescriben los base)
 }
 
 const clamp = (v: number, lo = -1, hi = 1) => Math.min(hi, Math.max(lo, v));
@@ -483,6 +484,14 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     score: momScore,
     weight: 0.06,
   });
+
+  // recalibración: si hay pesos calibrados (desde el laboratorio), se aplican aquí
+  if (inp.weights && Object.keys(inp.weights).length > 0) {
+    for (const f of factors) {
+      const cw = inp.weights[f.id];
+      if (typeof cw === "number" && cw > 0) f.weight = cw;
+    }
+  }
 
   const wSum = factors.reduce((a, f) => a + f.weight, 0);
   const score = factors.reduce((a, f) => a + f.score * f.weight, 0) / wSum;

@@ -29,6 +29,8 @@ import { BenchmarkPanel } from "./components/BenchmarkPanel";
 import { ExchangeRadarPanel } from "./components/ExchangeRadarPanel";
 import { AlertCenter, type SniperCfg } from "./components/AlertCenter";
 import { SniperToast, type SniperInfo } from "./components/SniperToast";
+import { RiskPanel } from "./components/RiskPanel";
+import { loadCalibration, loadHitRate, saveHitRate, type Calibration } from "./lib/calibration";
 import { OrderBookPanel } from "./components/OrderBookPanel";
 
 const STEPS = [
@@ -66,6 +68,29 @@ export default function App() {
 
   // redondeo del spot para no recalcular el mapa en cada tick
   const roundedSpot = useMemo(() => Math.round(market.spot / 8) * 8, [market.spot]);
+
+  // calibración de pesos aplicada desde el laboratorio (se recalcula al volver de la pestaña)
+  const [calibration, setCalibration] = useState<Calibration | null>(() => loadCalibration());
+  useEffect(() => {
+    const reload = () => setCalibration(loadCalibration());
+    window.addEventListener("focus", reload);
+    window.addEventListener("storage", reload);
+    return () => {
+      window.removeEventListener("focus", reload);
+      window.removeEventListener("storage", reload);
+    };
+  }, []);
+  const onCalibrated = (c: Calibration) => setCalibration(c);
+
+  // tasa de acierto histórica persistida por el laboratorio (para el índice de confiabilidad)
+  const [hitRate, setHitRate] = useState<{ hitRate: number; samples: number } | null>(() => {
+    const h = loadHitRate();
+    return h ? { hitRate: h.hitRate, samples: h.samples } : null;
+  });
+  const onHitRate = (hr: number, samples: number) => {
+    setHitRate({ hitRate: hr, samples });
+    saveHitRate(hr, samples);
+  };
 
   const analysis = useMemo(() => {
     if (market.candles.length === 0) return null;
@@ -119,9 +144,10 @@ export default function App() {
       fastSlopePct,
       slowSlopePct,
       momPct,
+      weights: calibration?.weights,
     });
     return { bins, longPool, shortPool, clusters, cvd, verdict, updatedAt: Date.now() };
-  }, [market.candles, market.oi, market.fundingRate, market.fundingTrend, market.globalRatio, market.topRatio, market.takerRatio, market.oiChange24h, market.oiSlope5m, market.premium, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs]);
+  }, [market.candles, market.oi, market.fundingRate, market.fundingTrend, market.globalRatio, market.topRatio, market.takerRatio, market.oiChange24h, market.oiSlope5m, market.premium, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs, calibration]);
 
   /* ---------- track record del modelo ---------- */
   const [preds, setPreds] = useState<Prediction[]>(() => loadPredictions());
@@ -304,6 +330,17 @@ export default function App() {
     sendWebhook("prueba", { mensaje: "LiqRadar conectado: recibirás giros de rumbo, zonas magnéticas y señales francotirador" });
   };
 
+  // índice de confiabilidad de la señal: confianza del modelo + acierto histórico + frescura de datos
+  const reliability = useMemo(() => {
+    if (!analysis) return null;
+    const conf = analysis.verdict.confidence;
+    const hist = hitRate ? hitRate.hitRate : 50; // sin laboratorio corrido → neutro
+    const src = market.sources;
+    const liveCount = [src.klines, src.metrics, src.price, src.liq].filter((s) => s === "live").length;
+    const freshness = liveCount === 4 ? 100 : liveCount >= 2 ? 60 : 30;
+    return Math.round(0.5 * conf + 0.3 * hist + 0.2 * freshness);
+  }, [analysis, hitRate, market.sources]);
+
   const r0 = useReveal();
   const r1 = useReveal();
   const r2 = useReveal();
@@ -316,6 +353,7 @@ export default function App() {
   const r9 = useReveal();
   const r10 = useReveal();
   const r11 = useReveal();
+  const r12 = useReveal();
 
   return (
     <div className="relative min-h-screen font-body">
@@ -338,6 +376,7 @@ export default function App() {
                 history={biasHist}
                 magnetClose={magnetClose}
                 magnetPrice={analysis.verdict.target?.price ?? null}
+                reliability={reliability}
               />
             ) : (
               <div className="panel flex h-40 animate-pulse items-center justify-center font-mono text-xs text-dusk">
@@ -462,6 +501,16 @@ export default function App() {
             <OrderBookPanel spot={market.spot} />
           </section>
 
+          {/* gestión de riesgo */}
+          <section className="panel reveal mt-5" ref={r12}>
+            <RiskPanel
+              spot={market.spot}
+              target={analysis?.verdict.target?.price ?? null}
+              invalidation={analysis?.verdict.invalidation?.price ?? null}
+              direction={analysis?.verdict.direction ?? "neutral"}
+            />
+          </section>
+
           {/* acumulación + track record */}
           <div className="reveal mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_1fr]" ref={r3}>
             <section className="panel">
@@ -489,7 +538,7 @@ export default function App() {
 
           {/* laboratorio de validación */}
           <section className="panel reveal mt-5" ref={r5}>
-            <BacktestLab spot={market.spot} />
+            <BacktestLab spot={market.spot} onCalibrated={onCalibrated} onHitRate={onHitRate} />
           </section>
 
           {/* diagnóstico en vivo */}
