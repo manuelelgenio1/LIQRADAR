@@ -54,9 +54,14 @@ const ROWS: Row[] = [
     cells: ["yes", "no", "no", "no"],
   },
   {
+    feature: "Alertas configurables + webhook (Telegram/Discord)",
+    detail: "Modo francotirador con umbrales de sesgo y confianza, aviso sonoro y envío del evento en JSON al webhook que configures. En las grandes, las alertas suelen ser de pago.",
+    cells: ["yes", "partial", "partial", "partial"],
+  },
+  {
     feature: "Agregación multi-exchange (10+ exchanges)",
-    detail: "Coinglass agrega liquidaciones y OI de más de una decena de exchanges; nosotros operamos sobre Binance, el de mayor volumen.",
-    cells: ["no", "yes", "yes", "yes"],
+    detail: "El radar compara en vivo Binance, OKX y Bybit (los tres mayores por volumen) con señales de divergencia; Coinglass cubre una decena.",
+    cells: ["partial", "yes", "yes", "yes"],
   },
   {
     feature: "Order book L2 / footprint / opciones",
@@ -102,7 +107,7 @@ export function BenchmarkPanel() {
     <div className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="panel-tag">10 · benchmark competitivo</div>
+          <div className="panel-tag">11 · benchmark competitivo</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
             Frente a las herramientas que usa el mercado
           </h2>
@@ -131,7 +136,7 @@ export function BenchmarkPanel() {
           <div className="font-mono text-[10px] font-700 tracking-widest text-long">HALLAZGO 02 · LA DIFERENCIA</div>
           <p className="mt-2 text-[12.5px] leading-relaxed text-mist">
             Esta es la única herramienta del cuadro que <b className="text-fog">mide su propio rendimiento</b>: el
-            laboratorio re-ejecuta el motor contra 41 días de historia (panel 08) y la auditoría en vivo (panel 09)
+            laboratorio re-ejecuta el motor contra 41 días de historia (panel 09) y la auditoría en vivo (panel 10)
             verifica cada dato. Las demás piden fe; esta enseña los números.
           </p>
         </div>

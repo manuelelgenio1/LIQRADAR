@@ -54,6 +54,18 @@ export function playMagnet() {
   tone(1174, 0.09, 0.09, 0.03, "triangle");
 }
 
+/** señal francotirador: triple blip urgente */
+export function playSniper() {
+  tone(988, 0, 0.07, 0.05, "square");
+  tone(988, 0.11, 0.07, 0.05, "square");
+  tone(1319, 0.22, 0.16, 0.05, "square");
+}
+
+/** confirmación (al activar sonido / probar webhook) */
+export function playConfirm() {
+  tone(660, 0, 0.09);
+}
+
 const KEY = "liqradar-sound";
 
 export function loadSoundPref(): boolean {

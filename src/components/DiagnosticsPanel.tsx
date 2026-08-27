@@ -265,7 +265,7 @@ export function DiagnosticsPanel({ m, a, rangePct, preds, flips }: Props) {
     <div className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="panel-tag">09 · diagnóstico en vivo</div>
+          <div className="panel-tag">10 · diagnóstico en vivo</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
             Prueba de integridad: ¿está funcionando de verdad?
           </h2>

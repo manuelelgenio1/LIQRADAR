@@ -23,9 +23,12 @@ import { LiqHeatmap } from "./components/LiqHeatmap";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { FlipAlert, type FlipInfo } from "./components/FlipAlert";
 import type { BiasPoint } from "./components/RumboGauge";
-import { loadSoundPref, playFlip, playMagnet, saveSoundPref } from "./lib/sound";
+import { loadSoundPref, playConfirm, playFlip, playMagnet, playSniper, saveSoundPref } from "./lib/sound";
 import { MarketPulsePanel } from "./components/MarketPulsePanel";
 import { BenchmarkPanel } from "./components/BenchmarkPanel";
+import { ExchangeRadarPanel } from "./components/ExchangeRadarPanel";
+import { AlertCenter, type SniperCfg } from "./components/AlertCenter";
+import { SniperToast, type SniperInfo } from "./components/SniperToast";
 
 const STEPS = [
   {
@@ -187,7 +190,13 @@ export default function App() {
     });
   };
   useEffect(() => {
-    if (soundOn && flip) playFlip(flip.dir);
+    if (!flip) return;
+    if (soundOn) playFlip(flip.dir);
+    sendWebhook("giro_rumbo", {
+      rumbo: flip.dir === "up" ? "LONG" : "SHORT",
+      spot: flip.spot,
+      objetivo: flip.target,
+    });
   }, [flip, soundOn]);
 
   // zona magnética: precio cerca del imán objetivo (≤0.6% o dentro de 1 ATR)
@@ -196,9 +205,98 @@ export default function App() {
     (analysis.verdict.cascade.length > 0 || analysis.verdict.target.distancePct <= 0.6);
   const prevMagnetRef = useRef(false);
   useEffect(() => {
-    if (soundOn && magnetClose && !prevMagnetRef.current) playMagnet();
+    if (magnetClose && !prevMagnetRef.current) {
+      if (soundOn) playMagnet();
+      sendWebhook("zona_magnetica", { spot: roundedSpot });
+    }
     prevMagnetRef.current = magnetClose;
-  }, [magnetClose, soundOn]);
+  }, [magnetClose, soundOn, roundedSpot]);
+
+  /* ---------- modo francotirador + webhook ---------- */
+  const [sniper, setSniperState] = useState<SniperCfg>(() => {
+    try {
+      const raw = localStorage.getItem("liqradar-sniper-v1");
+      if (raw) return { on: false, biasTh: 60, confTh: 60, ...(JSON.parse(raw) as Partial<SniperCfg>) };
+    } catch {
+      /* noop */
+    }
+    return { on: false, biasTh: 60, confTh: 60 };
+  });
+  const setSniper = (s: SniperCfg) => {
+    setSniperState(s);
+    try {
+      localStorage.setItem("liqradar-sniper-v1", JSON.stringify(s));
+    } catch {
+      /* noop */
+    }
+  };
+  const [webhook, setWebhookState] = useState<string>(() => {
+    try {
+      return localStorage.getItem("liqradar-webhook-v1") ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const setWebhook = (u: string) => {
+    setWebhookState(u);
+    try {
+      localStorage.setItem("liqradar-webhook-v1", u);
+    } catch {
+      /* noop */
+    }
+  };
+  const webhookRef = useRef(webhook);
+  webhookRef.current = webhook;
+
+  const sendWebhook = (evento: string, extra: Record<string, unknown>) => {
+    const url = webhookRef.current.trim();
+    if (!url) return;
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ app: "LiqRadar", evento, ...extra, ts: new Date().toISOString() }),
+    }).catch(() => {
+      /* webhook inaccesible: no bloquea el radar */
+    });
+  };
+
+  const [sniperAlert, setSniperAlert] = useState<SniperInfo | null>(null);
+  const [lastFire, setLastFire] = useState<number | null>(null);
+  const lastSniperRef = useRef(0);
+
+  useEffect(() => {
+    if (!analysis || !sniper.on) return;
+    const v = analysis.verdict;
+    if (v.direction === "neutral") return;
+    if (Math.abs(v.scorePct) >= sniper.biasTh && v.confidence >= sniper.confTh) {
+      const now = Date.now();
+      if (now - lastSniperRef.current > 45_000) {
+        lastSniperRef.current = now;
+        setSniperAlert({
+          dir: v.direction,
+          at: now,
+          spot: roundedSpot,
+          target: v.target?.price ?? null,
+          confidence: v.confidence,
+          score: v.scorePct,
+        });
+        setLastFire(now);
+        if (soundOn) playSniper();
+        sendWebhook("senal_francotirador", {
+          rumbo: v.direction === "up" ? "LONG" : "SHORT",
+          sesgo: v.scorePct,
+          confianza: v.confidence,
+          spot: roundedSpot,
+          objetivo: v.target?.price ?? null,
+        });
+      }
+    }
+  }, [analysis, sniper, roundedSpot, soundOn]);
+
+  const testAlerts = () => {
+    if (soundOn) playConfirm();
+    sendWebhook("prueba", { mensaje: "LiqRadar conectado: recibirás giros de rumbo, zonas magnéticas y señales francotirador" });
+  };
 
   const r0 = useReveal();
   const r1 = useReveal();
@@ -209,6 +307,8 @@ export default function App() {
   const r6 = useReveal();
   const r7 = useReveal();
   const r8 = useReveal();
+  const r9 = useReveal();
+  const r10 = useReveal();
 
   return (
     <div className="relative min-h-screen font-body">
@@ -216,6 +316,7 @@ export default function App() {
       <div className="scanline" />
 
       <FlipAlert flip={flip} onDismiss={() => setFlip(null)} />
+      <SniperToast s={sniperAlert} onDismiss={() => setSniperAlert(null)} />
 
       <div className="relative z-10">
         <TopBar m={market} soundOn={soundOn} onToggleSound={toggleSound} />
@@ -235,6 +336,18 @@ export default function App() {
                 FIJANDO RUMBO…
               </div>
             )}
+          </section>
+
+          {/* centro de alertas */}
+          <section className="reveal mb-5" ref={r9}>
+            <AlertCenter
+              sniper={sniper}
+              onSniper={setSniper}
+              webhook={webhook}
+              onWebhook={setWebhook}
+              onTest={testAlerts}
+              lastFire={lastFire}
+            />
           </section>
 
           {/* fila principal */}
@@ -326,6 +439,16 @@ export default function App() {
             <MarketPulsePanel />
           </section>
 
+          {/* radar multi-exchange */}
+          <section className="panel reveal mt-5" ref={r8}>
+            <ExchangeRadarPanel
+              spot={market.spot}
+              change24h={market.change24h}
+              fundingRate={market.fundingRate}
+              oiBtc={market.oi}
+            />
+          </section>
+
           {/* acumulación + track record */}
           <div className="reveal mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_1fr]" ref={r3}>
             <section className="panel">
@@ -368,7 +491,7 @@ export default function App() {
           </section>
 
           {/* benchmark competitivo */}
-          <section className="panel reveal mt-5" ref={r8}>
+          <section className="panel reveal mt-5" ref={r10}>
             <BenchmarkPanel />
           </section>
 
@@ -424,6 +547,8 @@ export default function App() {
                   <li><span className="text-long">▸</span> Binance Spot — velas y precio en vivo (WebSocket)</li>
                   <li><span className="text-long">▸</span> Binance USDⓈ-M — funding, interés abierto, ratios L/S</li>
                   <li><span className="text-long">▸</span> Binance Futuros — stream <span className="text-fog">!forceOrder</span> de liquidaciones</li>
+                  <li><span className="text-long">▸</span> OKX y Bybit — precio, funding y OI para el radar multi-exchange</li>
+                  <li><span className="text-long">▸</span> Webhook propio — alertas francotirador hacia Telegram/Discord</li>
                   <li><span className="text-warn">▸</span> Sin conexión: simulador coherente para seguir practicando</li>
                 </ul>
               </div>
