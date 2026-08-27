@@ -189,7 +189,7 @@ export default function App() {
       weights: calibration?.weights,
     });
     return { bins, longPool, shortPool, clusters, cvd, verdict, updatedAt: Date.now() };
-  }, [market.candles, market.liqEvents, market.bookImbalance, market.xCfundingGap, market.oi, market.fundingRate, market.fundingTrend, market.globalRatio, market.topRatio, market.takerRatio, market.oiChange24h, market.oiSlope5m, market.premium, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs, calibration]);
+  }, [market.candles, market.liqEvents, market.bookImbalance, market.xCfundingGap, market.oi, market.fundingRate, market.fundingTrend, market.globalRatio, market.topRatio, market.takerRatio, market.oiChange24h, market.oiSlope5m, market.premium, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs, calibration, options.data]);
 
   /* ---------- track record del modelo ---------- */
   const [preds, setPreds] = useState<Prediction[]>(() => loadPredictions());
@@ -480,6 +480,8 @@ export default function App() {
   const r16 = useReveal();
   const r17 = useReveal();
   const r18 = useReveal();
+  const r19 = useReveal();
+  const r20 = useReveal();
 
   /* badges de estado para las cabeceras de zona */
   const vDir = analysis?.verdict.direction;
@@ -593,6 +595,18 @@ export default function App() {
                 confluence={confluence}
               />
             )}
+          </section>
+
+          {/* agente LiqRadar: paper trading autónomo */}
+          <section className="panel reveal mb-5" ref={r20}>
+            <PaperAgentPanel
+              rules={agent.rules}
+              onRules={agent.setRules}
+              state={agent.state}
+              spot={market.spot}
+              onClosePosition={agent.closeNow}
+              onReset={agent.reset}
+            />
           </section>
           </SectionGroup>
 
@@ -836,6 +850,11 @@ export default function App() {
               preds={preds}
               flips={flipCount}
             />
+          </section>
+
+          {/* registro de auditoría */}
+          <section className="panel reveal mt-5" ref={r19}>
+            <AuditLogPanel />
           </section>
 
           {/* benchmark competitivo */}
