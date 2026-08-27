@@ -24,6 +24,7 @@ export function PriceChart({ candles, clusters, spot, oiHistory }: Props) {
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const oiRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const cdRef = useRef<ISeriesApi<"Line"> | null>(null);
   const linesRef = useRef<IPriceLine[]>([]);
   const lenRef = useRef(0);
 
@@ -59,14 +60,25 @@ export function PriceChart({ candles, clusters, spot, oiHistory }: Props) {
     });
     chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.06, bottom: 0.26 } });
 
-    // volumen agresivo (compra vs venta) abajo
+    // footprint: delta (compra − venta agresiva) por vela, abajo
     const vol = chart.addHistogramSeries({
       priceScaleId: "vol",
       priceFormat: { type: "volume" },
       lastValueVisible: false,
       priceLineVisible: false,
     });
-    chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 }, visible: false });
+    chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 }, visible: false });
+
+    // delta acumulado (quién controla el flujo) sobre la banda del footprint
+    const cd = chart.addLineSeries({
+      color: "#e9f1ff",
+      lineWidth: 1,
+      priceScaleId: "cd",
+      crosshairMarkerVisible: false,
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    chart.priceScale("cd").applyOptions({ scaleMargins: { top: 0.78, bottom: 0 }, visible: false });
 
     // interés abierto superpuesto (línea azul)
     const oi = chart.addLineSeries({
@@ -83,6 +95,7 @@ export function PriceChart({ candles, clusters, spot, oiHistory }: Props) {
     seriesRef.current = series;
     volRef.current = vol;
     oiRef.current = oi;
+    cdRef.current = cd;
 
     return () => {
       chart.remove();
@@ -90,6 +103,7 @@ export function PriceChart({ candles, clusters, spot, oiHistory }: Props) {
       seriesRef.current = null;
       volRef.current = null;
       oiRef.current = null;
+      cdRef.current = null;
       linesRef.current = [];
     };
   }, []);
@@ -105,17 +119,27 @@ export function PriceChart({ candles, clusters, spot, oiHistory }: Props) {
         close: c.close,
       }))
     );
+    const deltas = candles.map((c) => {
+      const buy = c.takerBuyQuote ?? c.quoteVolume * (c.close >= c.open ? 0.56 : 0.44);
+      return 2 * buy - c.quoteVolume;
+    });
+    const maxAbs = Math.max(...deltas.map((d) => Math.abs(d)), 1);
+    let acc = 0;
+    const cdData: { time: UTCTimestamp; value: number }[] = [];
     volRef.current?.setData(
-      candles.map((c) => {
-        const buy = c.takerBuyQuote ?? c.quoteVolume * (c.close >= c.open ? 0.56 : 0.44);
-        const delta = 2 * buy - c.quoteVolume;
+      candles.map((c, i) => {
+        const d = deltas[i];
+        const a = 0.22 + 0.6 * (Math.abs(d) / maxAbs);
+        acc += d;
+        cdData.push({ time: c.time as UTCTimestamp, value: acc });
         return {
           time: c.time as UTCTimestamp,
-          value: c.quoteVolume,
-          color: delta >= 0 ? "rgba(47,214,165,0.35)" : "rgba(255,77,109,0.35)",
+          value: d,
+          color: d >= 0 ? `rgba(47,214,165,${a.toFixed(2)})` : `rgba(255,77,109,${a.toFixed(2)})`,
         };
       })
     );
+    cdRef.current?.setData(cdData);
     if (oiRef.current && oiHistory && oiHistory.length > 1) {
       oiRef.current.setData(oiHistory.map((o) => ({ time: o.time as UTCTimestamp, value: o.oi })));
     }

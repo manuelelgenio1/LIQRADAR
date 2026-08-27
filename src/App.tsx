@@ -21,6 +21,7 @@ import { TrackRecord } from "./components/TrackRecord";
 import { BacktestLab } from "./components/BacktestLab";
 import { RumboGauge } from "./components/RumboGauge";
 import { RegimeBadge } from "./components/RegimeBadge";
+import { SessionsStrip } from "./components/SessionsStrip";
 import { LiqHeatmap } from "./components/LiqHeatmap";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { FlipAlert, type FlipInfo } from "./components/FlipAlert";
@@ -391,6 +392,7 @@ export default function App() {
 
       <div className="relative z-10">
         <TopBar m={market} soundOn={soundOn} onToggleSound={toggleSound} />
+        <SessionsStrip />
 
         <main className="mx-auto max-w-[1500px] px-5 pb-16 pt-6">
           {/* rumbo: ¿LONG o SHORT? */}
@@ -448,13 +450,15 @@ export default function App() {
                   <div>
                     <div className="panel-tag">00 · contexto</div>
                     <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
-                      BTC/USDT · velas {TF_CONFIG[tf].label}
+                      BTC/USDT · velas {TF_CONFIG[tf].label} · footprint + OI
                     </h2>
                   </div>
                   <div className="flex flex-wrap gap-x-5 gap-y-1 font-mono text-[10.5px] tabular-nums text-dusk">
                     <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-warn" />precio spot</span>
                     <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-short" />liq. shorts (objetivo alcista)</span>
                     <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-long" />liq. longs (objetivo bajista)</span>
+                    <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-pulse" />OI (azul)</span>
+                    <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-fog" />delta y Δ acumulado (footprint)</span>
                   </div>
                 </div>
                 {market.candles.length > 0 ? (
