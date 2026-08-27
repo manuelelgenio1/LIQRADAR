@@ -118,6 +118,7 @@ export interface VerdictInput {
   fundingWindow: number; // 0..1 proximidad al settlement de funding (cada 8h UTC)
   sweep: number; // −1..1 detección de barrida reciente (mecha a través de un cluster)
   liqVelocity: number; // −1..1 aceleración de liquidaciones en los últimos minutos
+  optionsPutCall: number; // put/call ratio de opciones por OI (1 = equilibrado)
   weights?: Record<string, number>; // pesos calibrados (opcional, sobrescriben los base)
 }
 
@@ -456,7 +457,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? `Longs pagan ${(inp.fundingRate * 100).toFixed(4)}% c/8h → multitud long`
         : `Shorts pagan ${(Math.abs(inp.fundingRate) * 100).toFixed(4)}% c/8h → multitud short`,
     score: fScore,
-    weight: 0.09,
+    weight: 0.08,
   });
   if (Math.abs(inp.fundingRate) >= 0.0003) {
     warnings.push({
@@ -517,7 +518,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? `${poolX.toFixed(1)}× más shorts ARRIBA (magnetismo ${(decayRaw * 100).toFixed(0)}% neto) → imán alcista`
         : `${poolX.toFixed(1)}× más longs ABAJO (magnetismo ${(decayRaw * 100).toFixed(0)}% neto) → imán bajista`,
     score: pScore,
-    weight: 0.13,
+    weight: 0.12,
   });
 
   // 6 · Interés abierto + tendencia 24h
@@ -584,7 +585,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
           ? "Ya se liquidaron más LONGS → combustible bajista gastado"
           : "Ya se liquidaron más SHORTS → combustible alcista gastado",
     score: lScore,
-    weight: 0.05,
+    weight: 0.04,
   });
 
   // 10 · Delta de takers spot (CVD): compra agresiva = multitud long apilada
@@ -734,6 +735,21 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     weight: 0.02,
   });
 
+  // 19 · Put/call de opciones: más puts = multitud bajista = combustible alcista (contrarian)
+  const pcr = inp.optionsPutCall ?? 1;
+  factors.push({
+    id: "optionsPC",
+    label: "Put/call de opciones",
+    detail:
+      Math.abs(pcr - 1) < 0.12
+        ? "Opciones equilibradas entre puts y calls"
+        : pcr > 1
+          ? `Put/call ${pcr.toFixed(2)} → abundan los PUTS (multitud bajista) → combustible alcista`
+          : `Put/call ${pcr.toFixed(2)} → abundan los CALLS (multitud alcista) → combustible bajista`,
+    score: clamp((pcr - 1) / 0.5),
+    weight: 0.03,
+  });
+
   // recalibración: si hay pesos calibrados (desde el laboratorio), se aplican aquí
   if (inp.weights && Object.keys(inp.weights).length > 0) {
     for (const f of factors) {
@@ -759,6 +775,7 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     proximity: "contrarian",
     sweep: "contrarian",
     velocity: "contrarian",
+    optionsPC: "contrarian",
     oi: "momentum",
     oiSlope: "momentum",
     mtf: "momentum",
@@ -987,6 +1004,7 @@ export function biasFromCandles(
     fundingWindow: 0,
     sweep: 0,
     liqVelocity: 0,
+    optionsPutCall: 1,
   });
 
   return {

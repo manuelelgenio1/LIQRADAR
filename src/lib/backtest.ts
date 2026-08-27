@@ -247,6 +247,7 @@ export async function runWalkForward(
       fundingWindow: 0,
       sweep: 0,
       liqVelocity: 0,
+      optionsPutCall: 1,
     });
 
     if (v.direction === "neutral") {

@@ -37,6 +37,7 @@ import { FundingHeatmap } from "./components/FundingHeatmap";
 import { AgentBridgePanel } from "./components/AgentBridgePanel";
 import { PaperAgentPanel } from "./components/PaperAgentPanel";
 import { usePaperAgent } from "./hooks/usePaperAgent";
+import { useOptionsSentiment } from "./hooks/useOptionsSentiment";
 import { AuditLogPanel } from "./components/AuditLogPanel";
 import { installGlobalErrorHandlers, logAudit } from "./lib/auditLog";
 import { SectionGroup } from "./components/SectionGroup";
@@ -93,6 +94,7 @@ export default function App() {
   const [tourOpen, setTourOpen] = useState(false);
   const market = useMarket(tf);
   const confluence = useConfluence();
+  const options = useOptionsSentiment();
 
   // redondeo del spot para no recalcular el mapa en cada tick
   const roundedSpot = useMemo(() => Math.round(market.spot / 8) * 8, [market.spot]);
@@ -183,6 +185,7 @@ export default function App() {
       fundingWindow: fundingProximity(Date.now()),
       sweep: detectSweep(market.candles, clusters),
       liqVelocity: liqVelocityScore(market.liqEvents, Date.now()),
+      optionsPutCall: options.data?.putCallRatio ?? 1,
       weights: calibration?.weights,
     });
     return { bins, longPool, shortPool, clusters, cvd, verdict, updatedAt: Date.now() };
@@ -808,6 +811,9 @@ export default function App() {
                   cvdPct={analysis.cvd.cvdPct}
                   cvdNet={analysis.cvd.cvdNet}
                   cvdSeries={analysis.cvd.series}
+                  optionsPutCall={options.data?.putCallRatio ?? null}
+                  optionsTotalOi={options.data?.totalOi ?? null}
+                  optionsLoading={options.loading}
                 />
               )}
             </section>

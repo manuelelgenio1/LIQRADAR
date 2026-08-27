@@ -18,6 +18,7 @@ import {
   type OIPoint,
 } from "../lib/binance";
 import { fetchBybit, fetchOkx } from "../lib/exchanges";
+import { logAudit } from "../lib/auditLog";
 
 export type Timeframe = "6h" | "12h" | "24h" | "72h" | "7d" | "14d";
 

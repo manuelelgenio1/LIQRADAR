@@ -34,6 +34,9 @@ interface Props {
   cvdPct: number;
   cvdNet: number;
   cvdSeries: number[];
+  optionsPutCall: number | null; // put/call de opciones por OI (null = sin datos)
+  optionsTotalOi: number | null; // USDT
+  optionsLoading: boolean;
 }
 
 function DualBar({ left, right, leftLabel, rightLabel }: { left: number; right: number; leftLabel: string; rightLabel: string }) {
@@ -189,6 +192,44 @@ export function AccumulationPanel(p: Props) {
                 ? "Venta agresiva: se apilan shorts a mercado → combustible para un short squeeze (presión alcista)."
                 : "Flujo comprador/vendedor equilibrado en la ventana."}
           </p>
+        </div>
+
+        {/* opciones: put/call */}
+        <div className="rounded-lg border border-line/70 bg-ink-950/50 p-4 transition-transform duration-200 hover:-translate-y-0.5">
+          <span className="panel-tag">opciones · put/call (OI)</span>
+          {p.optionsPutCall === null ? (
+            <>
+              <div className="mt-2 font-mono text-xl font-700 tabular-nums text-dusk">
+                {p.optionsLoading ? "…" : "—"}
+              </div>
+              <p className="mt-1.5 text-[11px] leading-snug text-dusk">
+                {p.optionsLoading
+                  ? "Consultando el mercado de opciones de Binance…"
+                  : "Opciones no disponibles en tu región/red — factor en neutro."}
+              </p>
+            </>
+          ) : (
+            <>
+              <div
+                className={`mt-2 font-mono text-xl font-700 tabular-nums ${
+                  p.optionsPutCall > 1.12 ? "text-long" : p.optionsPutCall < 0.88 ? "text-short" : "text-fog"
+                }`}
+              >
+                {p.optionsPutCall.toFixed(2)}
+                <span className="ml-2 text-[11px] font-500 text-dusk">puts/calls</span>
+              </div>
+              <div className="mt-1 font-mono text-[10.5px] tabular-nums text-dusk">
+                {p.optionsTotalOi !== null ? fmtCompact(p.optionsTotalOi) + " USDT en opciones" : ""}
+              </div>
+              <p className="mt-1.5 text-[11px] leading-snug text-dusk">
+                {p.optionsPutCall > 1.12
+                  ? "Abundan los PUTS: la multitud se cubre a la baja → combustible alcista (contrarian)."
+                  : p.optionsPutCall < 0.88
+                    ? "Abundan los CALLS: la multitud apuesta al alza → combustible bajista (contrarian)."
+                    : "Opciones equilibradas entre puts y calls."}
+              </p>
+            </>
+          )}
         </div>
       </div>
 
