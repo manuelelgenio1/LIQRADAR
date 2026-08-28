@@ -203,8 +203,31 @@ export function estimateLiquidationMap(
   nearPct = 2,
   externalClusters?: ExternalCluster[]
 ): { bins: LiqBin[]; longPool: number; shortPool: number; nearLongPool: number; nearShortPool: number; clusters: Cluster[] } {
-  const hi = spot * (1 + rangePct);
-  const lo = spot * (1 - rangePct);
+  // RANGO ADAPTATIVO: el eje debe cubrir la ACCIÓN DE PRECIO RECIENTE (donde están las
+  // posiciones que dominan por recencia) más las bandas de liquidación de los
+  // apalancamientos seleccionados. Un rango fijo recorta clusters en 1h/4h/1d/1w.
+  // Usamos el tramo reciente (último 45% de velas) para no abarcar toda la historia
+  // y perder el detalle cercano al precio, que es el accionable.
+  const recent = candles.slice(Math.max(0, Math.floor(candles.length * 0.55)));
+  let winHigh = -Infinity;
+  let winLow = Infinity;
+  for (const c of recent) {
+    if (c.high > winHigh) winHigh = c.high;
+    if (c.low < winLow) winLow = c.low;
+  }
+  if (!Number.isFinite(winHigh) || !Number.isFinite(winLow) || spot <= 0 || recent.length === 0) {
+    winHigh = spot * (1 + rangePct);
+    winLow = spot * (1 - rangePct);
+  }
+  // margen: cubre las bandas de liquidación (hasta ~6%) más una fracción del rango reciente
+  const maxLevDist = leverages.length > 0 ? Math.max(...leverages.map(liqDistance)) : 0.035;
+  const wantBand = Math.min(maxLevDist, 0.06);
+  const winSpan = Math.max(winHigh - winLow, 0);
+  const margin = Math.max(spot * wantBand * 0.6, winSpan * 0.12, spot * 0.012);
+
+  // unión: nunca más estrecho que el rango configurado, más ancho si la ventana lo exige
+  const hi = Math.max(spot * (1 + rangePct), Math.max(winHigh, spot) + margin);
+  const lo = Math.min(spot * (1 - rangePct), Math.min(winLow, spot) - margin);
   const step = (hi - lo) / binsCount;
   const raw = new Float64Array(binsCount);
   const n = candles.length;
