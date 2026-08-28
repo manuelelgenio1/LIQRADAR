@@ -4,7 +4,6 @@ import {
   fetchFundingSeries,
   fetchOIHistory,
   fetchTakerSeries,
-  simSeries,
   type SeriesPoint,
 } from "../lib/binance";
 import { fmtCompact } from "../lib/engine";
@@ -24,10 +23,7 @@ interface TileDef {
   aboveIsLong: boolean; // > neutral = multitud long (rojo de contrarian)
   note: (v: number, neutral: number) => string;
   load: () => Promise<SeriesPoint[]>;
-  sim: () => SeriesPoint[];
 }
-
-const H8 = 8 * 3600_000;
 
 const TILES: TileDef[] = [
   {
@@ -44,7 +40,6 @@ const TILES: TileDef[] = [
           ? "shorts pagando: multitud bajista apilada"
           : "funding neutro: sin multitud definida",
     load: async () => (await fetchFundingSeries(90)).map((p) => ({ ...p })),
-    sim: () => simSeries(0.0001, 0.5, 90, H8),
   },
   {
     id: "oi",
@@ -55,7 +50,6 @@ const TILES: TileDef[] = [
     aboveIsLong: false,
     note: (v, _n) => `OI actual ${fmtCompact(v * 60000)} nocional aprox.`,
     load: async () => (await fetchOIHistory("1h", 168)).map((p) => ({ time: p.time, value: p.oi })),
-    sim: () => simSeries(520_000, 0.012, 168, 3600_000),
   },
   {
     id: "taker",
@@ -71,7 +65,6 @@ const TILES: TileDef[] = [
           ? "dominan las ventas agresivas (multitud short)"
           : "flujo comprador/vendedor equilibrado",
     load: () => fetchTakerSeries("1h", 168),
-    sim: () => simSeries(1, 0.05, 168, 3600_000),
   },
   {
     id: "ratio",
@@ -87,7 +80,6 @@ const TILES: TileDef[] = [
           ? "retail muy inclinado a short: combustible alcista"
           : "retail repartido entre ambos bandos",
     load: () => fetchAccountRatioSeries("1h", 168),
-    sim: () => simSeries(1.15, 0.04, 168, 3600_000),
   },
 ];
 
@@ -161,7 +153,7 @@ function Spark({ data, color, refLine, format }: { data: SeriesPoint[]; color: s
 
 interface TileState {
   data: SeriesPoint[];
-  sim: boolean;
+  noData: boolean; // REAL ONLY: fuente ausente → se declara, no se simula
 }
 
 export function MarketPulsePanel() {
@@ -172,11 +164,11 @@ export function MarketPulsePanel() {
     TILES.forEach((t) => {
       t.load()
         .then((d) => {
-          if (alive && d.length > 1) setTiles((s) => ({ ...s, [t.id]: { data: d, sim: false } }));
-          else if (alive) setTiles((s) => ({ ...s, [t.id]: { data: t.sim(), sim: true } }));
+          // REAL ONLY: serie válida o SIN DATOS — jamás una serie inventada
+          if (alive) setTiles((s) => ({ ...s, [t.id]: { data: d.length > 1 ? d : [], noData: d.length <= 1 } }));
         })
         .catch(() => {
-          if (alive) setTiles((s) => ({ ...s, [t.id]: { data: t.sim(), sim: true } }));
+          if (alive) setTiles((s) => ({ ...s, [t.id]: { data: [], noData: true } }));
         });
     });
     return () => {
@@ -213,6 +205,16 @@ export function MarketPulsePanel() {
               </div>
             );
           }
+          if (st.noData || st.data.length < 2) {
+            return (
+              <div key={t.id} className="flex h-[150px] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-warn/30 bg-ink-950/40 px-4 text-center">
+                <span className="font-mono text-[11px] font-700 tracking-[0.2em] text-warn">SIN DATOS</span>
+                <span className="font-mono text-[9.5px] leading-snug text-dusk">
+                  {t.label}: la fuente no está disponible en tu red. REAL ONLY — no se fabrica histórico.
+                </span>
+              </div>
+            );
+          }
           const vals = st.data.map((d) => d.value);
           const now = vals[vals.length - 1];
           const start = vals[0];
@@ -227,7 +229,7 @@ export function MarketPulsePanel() {
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="text-[12px] font-600 text-fog">{t.label}</div>
-                  <div className="font-mono text-[9.5px] text-dusk">{t.window}{st.sim ? " · SIMULADO" : ""}</div>
+                  <div className="font-mono text-[9.5px] text-dusk">{t.window}</div>
                 </div>
                 <span
                   className={`rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-700 tabular-nums ${

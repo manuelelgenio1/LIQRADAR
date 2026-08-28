@@ -123,7 +123,7 @@ export function DiagnosticsPanel({ m, a, rangePct, preds, flips }: Props) {
     label: "Velas históricas · Binance Spot REST",
     status: m.candles.length === 0 ? "fail" : m.sources.klines === "live" ? "ok" : "warn",
     detail: lastCandle
-      ? `${m.candles.length} velas recibidas · última cerró ${fmtTime(lastCandle.time * 1000)} en ${fmtUsd(lastCandle.close, 1)} · volumen taker ${fmtCompact(lastCandle.takerBuyQuote ?? 0)}${m.sources.klines === "sim" ? " · MODO SIMULADO (sin conexión al exchange)" : ""}`
+      ? `${m.candles.length} velas recibidas · última cerró ${fmtTime(lastCandle.time * 1000)} en ${fmtUsd(lastCandle.close, 1)} · volumen taker ${fmtCompact(lastCandle.takerBuyQuote ?? 0)}${m.sources.klines !== "live" ? " · FUENTE NO DISPONIBLE (REAL ONLY: señal bloqueada)" : ""}`
       : "esperando respuesta del exchange…",
   });
 
@@ -134,7 +134,7 @@ export function DiagnosticsPanel({ m, a, rangePct, preds, flips }: Props) {
     status: !priceLive ? "warn" : secsSincePrice <= 30 ? "ok" : "fail",
     detail: priceLive
       ? `stream conectado · ${fmtUsd(m.spot, 1)} · último tick hace ${secsSincePrice}s`
-      : `modo simulado activo · ${fmtUsd(m.spot, 1)} · tick hace ${secsSincePrice}s (tu red no permite wss://stream.binance.com)`,
+      : `stream caído · ${fmtUsd(m.spot, 1)} congelado en el último dato real (tu red no permite wss://stream.binance.com)`,
     live: true,
   });
 
@@ -144,7 +144,7 @@ export function DiagnosticsPanel({ m, a, rangePct, preds, flips }: Props) {
     label: "Liquidaciones · stream !forceOrder (todos los futuros)",
     status: m.sources.liq === "live" ? "ok" : "warn",
     detail: lastLiq
-      ? `${m.liqEvents.length} eventos en buffer · último: ${fmtTime(lastLiq.time)} ${lastLiq.side.toUpperCase()} liquidado @ ${fmtUsd(lastLiq.price, 1)} por ${fmtCompact(lastLiq.notional)}${m.sources.liq === "sim" ? " · MODO SIMULADO" : ""}`
+      ? `${m.liqEvents.length} eventos en buffer · último: ${fmtTime(lastLiq.time)} ${lastLiq.side.toUpperCase()} liquidado @ ${fmtUsd(lastLiq.price, 1)} por ${fmtCompact(lastLiq.notional)}${m.sources.liq !== "live" ? " · fuente degradada" : ""}`
       : "escuchando el mercado… sin liquidaciones todavía (normal en mercados tranquilos)",
     live: true,
   });

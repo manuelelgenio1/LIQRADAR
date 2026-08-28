@@ -45,8 +45,8 @@ function PriceSpark({ data }: { data: number[] }) {
 export function TopBar({ m, soundOn, onToggleSound }: { m: MarketData; soundOn: boolean; onToggleSound: () => void }) {
   const up = m.dir >= 0;
   const fundingLabel = useCountdownLabel(m.nextFundingTime);
-  const sim = m.sources.klines === "sim" && m.sources.metrics === "sim";
-  const partial = !sim && (m.sources.price === "sim" || m.sources.liq === "sim");
+  const sinDatos = m.sources.klines !== "live" && m.sources.metrics !== "live";
+  const partial = !sinDatos && (m.sources.price !== "live" || m.sources.liq !== "live");
 
   // historial de ticks para el sparkline
   const [hist, setHist] = useState<number[]>([]);
@@ -116,16 +116,16 @@ export function TopBar({ m, soundOn, onToggleSound }: { m: MarketData; soundOn: 
             <div className="panel-tag">L/S cuentas</div>
             <div className="text-fog">{m.globalRatio.toFixed(2)}</div>
           </div>
-          <div className="flex items-center gap-2 rounded-md border border-line px-3 py-1.5">
+          <div className="flex items-center gap-2 rounded-md border border-line px-3 py-1.5" title="REAL ONLY: sin datos reales la señal se bloquea, nunca se simula">
             <span
               className="live-dot"
               style={{
-                background: sim ? "#ffb547" : partial ? "#3fb6ff" : "#2fd6a5",
-                color: sim ? "#ffb547" : partial ? "#3fb6ff" : "#2fd6a5",
+                background: sinDatos ? "#ffb547" : partial ? "#3fb6ff" : "#2fd6a5",
+                color: sinDatos ? "#ffb547" : partial ? "#3fb6ff" : "#2fd6a5",
               }}
             />
-            <span className={`font-600 tracking-widest ${sim ? "text-warn" : partial ? "text-pulse" : "text-long"}`}>
-              {sim ? "SIMULADO" : partial ? "PARCIAL" : "EN VIVO"}
+            <span className={`font-600 tracking-widest ${sinDatos ? "text-warn" : partial ? "text-pulse" : "text-long"}`}>
+              {sinDatos ? "SIN DATOS" : partial ? "PARCIAL" : "EN VIVO"}
             </span>
           </div>
           <button

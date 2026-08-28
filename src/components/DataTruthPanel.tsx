@@ -17,7 +17,11 @@ export function DataTruthPanel() {
   useSyncExternalStore(subscribeDataTruth, getDataTruthVersion);
   const sources = getSources();
   const counts: Record<TruthState, number> = { real: 0, estimated: 0, unavailable: 0, connecting: 0 };
-  for (const s of sources) counts[s.state]++;
+  // normalización defensiva (P24): un estado inesperado jamás debe romper el panel
+  for (const s of sources) {
+    if (counts[s.state] !== undefined) counts[s.state]++;
+    else counts.unavailable++;
+  }
 
   return (
     <div className="p-5">
@@ -48,7 +52,7 @@ export function DataTruthPanel() {
 
       <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
         {sources.map((s) => {
-          const meta = TRUTH_META[s.state];
+          const meta = TRUTH_META[s.state] ?? TRUTH_META.unavailable;
           return (
             <div
               key={s.id}

@@ -248,10 +248,9 @@ export default function App() {
       weights: calibration?.weights,
     });
 
-    // REGLA 6 (REAL ONLY): si las velas críticas son simuladas (fuente real caída),
-    // la señal direccional se BLOQUEA — el motor nunca emite LONG/SHORT con datos
-    // sintéticos. Los paneles siguen mostrando el simulador, etiquetado como tal.
-    const isSim = market.sources.klines === "sim";
+    // REGLA 6 (REAL ONLY): si las velas críticas no están disponibles (fuente real caída),
+    // la señal direccional se BLOQUEA — el motor jamás emite LONG/SHORT sin datos reales.
+    const isSim = market.sources.klines !== "live";
     const finalVerdict = isSim
       ? {
           ...verdict,

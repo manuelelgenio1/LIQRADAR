@@ -12,9 +12,6 @@ import {
   fetchRatios,
   fetchTakerRatio,
   fetchTicker24h,
-  simKlines,
-  simLiqEvent,
-  simTick,
   type OIPoint,
 } from "../lib/binance";
 import { fetchBybit, fetchOkx } from "../lib/exchanges";
@@ -77,7 +74,12 @@ export interface MarketData {
   liqEvents: LiqEvent[];
   sessionLong: number;
   sessionShort: number;
-  sources: { klines: "live" | "sim"; metrics: "live" | "sim"; price: "live" | "sim"; liq: "live" | "sim" };
+  sources: {
+    klines: "live" | "unavailable";
+    metrics: "live" | "unavailable";
+    price: "live" | "unavailable";
+    liq: "live" | "unavailable";
+  };
   refreshIn: number;
 }
 
@@ -107,12 +109,16 @@ export function useMarket(tf: Timeframe): MarketData {
   const [oiHistory, setOiHistory] = useState<OIPoint[]>([]);
   const [liqEvents, setLiqEvents] = useState<LiqEvent[]>([]);
   const [session, setSession] = useState({ long: 0, short: 0 });
-  const [sources, setSources] = useState<MarketData["sources"]>({ klines: "sim", metrics: "sim", price: "sim", liq: "sim" });
+  const [sources, setSources] = useState<MarketData["sources"]>({
+    klines: "unavailable",
+    metrics: "unavailable",
+    price: "unavailable",
+    liq: "unavailable",
+  });
   const [refreshIn, setRefreshIn] = useState(REFRESH_S);
 
   const spotRef = useRef(spot);
   spotRef.current = spot;
-  const simBiasRef = useRef(0.52);
   const fundingRef = useRef(funding.rate);
   fundingRef.current = funding.rate;
 
@@ -134,9 +140,10 @@ export function useMarket(tf: Timeframe): MarketData {
         }
       } catch {
         if (!alive) return;
-        setCandles(simKlines(spotRef.current, cfg.limit, cfg.ms));
-        setSources((s) => ({ ...s, klines: "sim" }));
-        logAudit("datos", "warn", `Velas ${cfg.interval} no disponibles en Binance → usando simulador coherente`);
+        // REAL ONLY: sin velas reales no hay señal — jamás se fabrican
+        setCandles([]);
+        setSources((s) => ({ ...s, klines: "unavailable" }));
+        logAudit("datos", "error", `Velas ${cfg.interval} no disponibles: fuente crítica ausente → señal bloqueada (REAL ONLY)`);
       }
     };
     load();
@@ -282,7 +289,7 @@ export function useMarket(tf: Timeframe): MarketData {
         /* opcional */
       }
       if (alive) {
-        setSources((s) => ({ ...s, metrics: ok ? "live" : "sim" }));
+        setSources((s) => ({ ...s, metrics: ok ? "live" : "unavailable" }));
         setRefreshIn(REFRESH_S);
       }
     };
@@ -298,7 +305,6 @@ export function useMarket(tf: Timeframe): MarketData {
 
   /* ---------- precio en vivo (WS trades) ---------- */
   useEffect(() => {
-    let simTimer: ReturnType<typeof setInterval> | null = null;
     const close = connectWs(
       "wss://stream.binance.com:9443/ws/btcusdt@trade",
       (data) => {
@@ -311,42 +317,25 @@ export function useMarket(tf: Timeframe): MarketData {
         setTickId((t) => t + 1);
       },
       () => {
-        setSources((s) => ({ ...s, price: "sim" }));
-        if (!simTimer) {
-          simTimer = setInterval(() => {
-            const p = simTick(spotRef.current);
-            setDir(p >= spotRef.current ? 1 : -1);
-            setSpot(p);
-            setTickId((t) => t + 1);
-          }, 1400);
-        }
+        // REAL ONLY: sin ticks reales el precio se congela en el último dato observado
+        setSources((s) => ({ ...s, price: "unavailable" }));
+        logAudit("datos", "warn", "Stream de precio caído: el spot se congela en el último dato real");
       }
     );
     return () => {
       close();
-      if (simTimer) clearInterval(simTimer);
     };
   }, []);
 
-  /* ---------- liquidaciones en vivo (WS forceOrder) ---------- */
+  /* ---------- liquidaciones en vivo (WS forceOrder, ruta oficial) ---------- */
   useEffect(() => {
     let gotReal = false;
-    let simTimer: ReturnType<typeof setTimeout> | null = null;
 
     const pushEvent = (e: LiqEvent) => {
       setLiqEvents((prev) => [e, ...prev].slice(0, 46));
       setSession((s) =>
         e.side === "long" ? { ...s, long: s.long + e.notional } : { ...s, short: s.short + e.notional }
       );
-    };
-
-    const startSim = () => {
-      setSources((s) => ({ ...s, liq: "sim" }));
-      const loop = () => {
-        pushEvent(simLiqEvent(spotRef.current, simBiasRef.current));
-        simTimer = setTimeout(loop, 4200 + Math.random() * 9500);
-      };
-      simTimer = setTimeout(loop, 1200);
     };
 
     const close = connectWs(
@@ -359,6 +348,7 @@ export function useMarket(tf: Timeframe): MarketData {
         setSources((s) => (s.liq === "live" ? s : { ...s, liq: "live" }));
         const price = Number(o.p);
         const qty = Number(o.q);
+        if (!Number.isFinite(price) || !Number.isFinite(qty) || price <= 0 || qty <= 0) return;
         pushEvent({
           id: `liq-${o.T}-${Math.random().toString(36).slice(2, 7)}`,
           time: o.T,
@@ -369,26 +359,27 @@ export function useMarket(tf: Timeframe): MarketData {
         });
       },
       () => {
-        if (!gotReal && !simTimer) startSim();
+        // REAL ONLY: sin stream no se fabrican liquidaciones
+        if (!gotReal) {
+          setSources((s) => ({ ...s, liq: "unavailable" }));
+          logAudit("datos", "warn", "Stream de liquidaciones sin datos: la fuente queda UNAVAILABLE (no se simula)");
+        }
       }
     );
 
-    // si en 9s no llega nada real, arranca el simulador
+    // si en 12s no llegó nada real, se declara la fuente como no disponible
     const fallback = setTimeout(() => {
-      if (!gotReal) startSim();
-    }, 9000);
+      if (!gotReal) {
+        setSources((s) => (s.liq === "live" ? s : { ...s, liq: "unavailable" }));
+        logAudit("datos", "info", "12s sin liquidaciones observadas: puede ser mercado tranquilo o fuente caída");
+      }
+    }, 12_000);
 
     return () => {
       close();
       clearTimeout(fallback);
-      if (simTimer) clearTimeout(simTimer);
     };
   }, []);
-
-  /* sesgo del simulador según funding (coherencia narrativa) */
-  useEffect(() => {
-    simBiasRef.current = funding.rate >= 0 ? 0.56 : 0.44;
-  }, [funding.rate]);
 
   return {
     spot,

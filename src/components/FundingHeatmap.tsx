@@ -52,21 +52,11 @@ export function FundingHeatmap() {
       if (o.status === "fulfilled") series.okx = o.value;
       if (y.status === "fulfilled") series.bybit = y.value;
 
+      // REAL ONLY: si ningún exchange responde, se declara SIN DATOS (nunca se simula);
+      // si solo alguno falla, su fila queda vacía marcada como no disponible.
       const haveReal = series.binance.length > 0 || series.okx.length > 0 || series.bybit.length > 0;
-      if (!haveReal) {
-        sim = true;
-        series.binance = simFunding(COLS, 0);
-        series.okx = simFunding(COLS, 2);
-        series.bybit = simFunding(COLS, 4);
-      } else {
-        // si algún exchange falló pero otros no, rellena el hueco con simulador
-        if (series.binance.length === 0) series.binance = simFunding(COLS, 0);
-        if (series.okx.length === 0) series.okx = simFunding(COLS, 2);
-        if (series.bybit.length === 0) series.bybit = simFunding(COLS, 4);
-      }
-
       if (alive) {
-        setHeat(buildFundingHeat(series, sim, COLS));
+        setHeat(haveReal ? buildFundingHeat(series, false, COLS) : null);
         setLoading(false);
       }
     };

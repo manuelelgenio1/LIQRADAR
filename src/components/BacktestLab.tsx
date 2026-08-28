@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import type { BtResult, BtTest } from "../lib/backtest";
 import { runWalkForward, type BtPos } from "../lib/backtest";
-import { fetchKlines, simKlines, fetchTakerSeries, fetchAccountRatioSeries, fetchFundingSeries } from "../lib/binance";
+import { fetchKlines, fetchTakerSeries, fetchAccountRatioSeries, fetchFundingSeries } from "../lib/binance";
 import { fmtUsd, type Candle } from "../lib/engine";
 import { calibrateWeights, loadCalibration, saveCalibration, clearCalibration, type Calibration } from "../lib/calibration";
 
@@ -68,18 +68,16 @@ export function BacktestLab({ spot, onCalibrated, onHitRate }: {
     setStepNote("descargando 1000 velas de 1h desde Binance…");
 
     let candles: Candle[];
-    let sim = false;
+    const sim = false; // REAL ONLY: el backtest solo corre con histórico real
     try {
       candles = await fetchKlines("1h", 1000);
       if (candles.length < 200) throw new Error(`Binance devolvió ${candles.length} velas (mínimo 200)`);
       console.info(`[LiqRadar] ${candles.length} velas reales descargadas`);
       setStepNote(`${candles.length} velas reales descargadas · re-ejecutando el motor paso a paso…`);
     } catch (e) {
-      sim = true;
-      candles = simKlines(spotRef.current, 1000, 3_600_000);
       const why = e instanceof Error ? e.message : "red no disponible";
-      console.warn(`[LiqRadar] sin acceso a Binance (${why}) → simulador`);
-      setStepNote(`sin acceso a Binance (${why}) → usando simulador coherente…`);
+      console.error(`[LiqRadar] histórico no disponible (${why}): REAL ONLY, la prueba no se simula`);
+      throw new Error(`Histórico de Binance no disponible (${why}). El backtest requiere datos reales: sin histórico no hay prueba.`);
     }
 
     // series históricas de posicionamiento para validar también funding/takers/cuentas

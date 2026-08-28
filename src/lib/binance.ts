@@ -163,18 +163,6 @@ export async function fetchTakerSeries(period: string, limit: number): Promise<S
   return r.map((x) => ({ time: Math.floor(Number(x.timestamp) / 1000), value: Number(x.buySellRatio) }));
 }
 
-/* Simuladores coherentes para red restringida */
-export function simSeries(base: number, vol: number, count: number, stepMs: number): SeriesPoint[] {
-  const now = Date.now();
-  let v = base;
-  const out: SeriesPoint[] = [];
-  for (let i = count - 1; i >= 0; i--) {
-    v = v * (1 + (rnd() - 0.5) * vol) + base * (rnd() - 0.5) * vol * 0.15;
-    out.push({ time: Math.floor((now - i * stepMs) / 1000), value: v });
-  }
-  return out;
-}
-
 export async function fetchOpenInterest(): Promise<{ oi: number; change24hPct: number }> {
   const [oi, hist] = await Promise.all([
     getJson<{ openInterest: string }>(`${FUT}/fapi/v1/openInterest?symbol=BTCUSDT`),
@@ -267,56 +255,5 @@ export function connectWs(
   };
 }
 
-/* ================= Simulador (fallback sin red) ================= */
-
-let seed = 20260214;
-function rnd() {
-  seed = (seed * 1664525 + 1013904223) % 4294967296;
-  return seed / 4294967296;
-}
-const gauss = () => (rnd() + rnd() + rnd() - 1.5) * 1.6;
-
-export function simKlines(spot: number, count: number, intervalMs: number): Candle[] {
-  const sigma = 0.0052 * Math.sqrt(intervalMs / 3600000);
-  const closes: number[] = [spot];
-  for (let i = 1; i < count; i++) {
-    closes.push(closes[i - 1] / (1 + gauss() * sigma));
-  }
-  closes.reverse();
-  const now = Math.floor(Date.now() / intervalMs) * intervalMs;
-  return closes.map((close, i) => {
-    const open = i === 0 ? close * (1 + gauss() * sigma * 0.5) : closes[i - 1];
-    const hi = Math.max(open, close) * (1 + Math.abs(gauss()) * sigma * 0.6);
-    const lo = Math.min(open, close) * (1 - Math.abs(gauss()) * sigma * 0.6);
-    const quoteVolume = 8e6 * Math.pow(10, rnd() * 1.7) * (1 + Math.abs(hi - lo) / open / sigma / 3);
-    const buyShare = 0.5 + (close >= open ? 0.09 : -0.09) + (rnd() - 0.5) * 0.12;
-    return {
-      time: Math.floor((now - (count - 1 - i) * intervalMs) / 1000),
-      open,
-      high: hi,
-      low: lo,
-      close,
-      quoteVolume,
-      takerBuyQuote: quoteVolume * buyShare,
-    };
-  });
-}
-
-export function simTick(prev: number): number {
-  return prev * (1 + gauss() * 0.00045);
-}
-
-export function simLiqEvent(spot: number, biasLong: number): LiqEvent {
-  const side: "long" | "short" = rnd() < biasLong ? "long" : "short";
-  const drift = (side === "long" ? -1 : 1) * (0.0004 + rnd() * 0.003);
-  const price = spot * (1 + drift);
-  const qty = Math.pow(10, rnd() * 2.4 - 2.4) * (0.4 + rnd() * 2.2);
-  return {
-    id: `sim-${Date.now()}-${Math.floor(rnd() * 1e6)}`,
-    time: Date.now(),
-    side,
-    price,
-    qty,
-    notional: qty * price,
-  };
-}
+/* REAL ONLY (handoff V5, punto 4): sin simuladores de datos de mercado.
+   Si una fuente crítica falta, se marca UNAVAILABLE y la señal se bloquea. */
