@@ -43,6 +43,8 @@ import { AuditLogPanel } from "./components/AuditLogPanel";
 import { DataTruthPanel } from "./components/DataTruthPanel";
 import { installGlobalErrorHandlers, logAudit } from "./lib/auditLog";
 import { markSource } from "./lib/dataTruth";
+import { getBrackets } from "./lib/brackets";
+import { fetchExternalClusters, type ExternalClusterSet } from "./lib/externalLiquidity";
 import { SectionGroup } from "./components/SectionGroup";
 import { MiniNav, type ZoneDef } from "./components/MiniNav";
 import { AlertCenter, type SniperCfg, type PriceLevel } from "./components/AlertCenter";
@@ -125,6 +127,28 @@ export default function App() {
     saveHitRate(hr, samples);
   };
 
+  /* ---------- clusters externos (CoinGlass / endpoint personalizado, opcionales) ---------- */
+  const [extClusters, setExtClusters] = useState<ExternalClusterSet | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      fetchExternalClusters(roundedSpot)
+        .then((s) => {
+          if (alive) setExtClusters(s);
+        })
+        .catch(() => {
+          if (alive) setExtClusters(null);
+        });
+    };
+    load();
+    const id = setInterval(load, 120_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Math.round(roundedSpot / 500)]);
+
   // niveles clave de estructura (objetivos, derivados de velas diarias + visibles)
   const keyLevels = useMemo(
     () => computeKeyLevels(market.daily, market.candles, market.spot),
@@ -143,7 +167,8 @@ export default function App() {
       cfg.range,
       58,
       oiUsdt,
-      2
+      2,
+      extClusters?.clusters
     );
     const atrPerHour = atrOf(market.candles) * (3600_000 / cfg.ms);
 
@@ -215,10 +240,36 @@ export default function App() {
       optSkew: market.optAdv?.skew ?? null,
       optMaxPain: market.optAdv?.maxPain ?? null,
       marketRegime,
+      externalClusters: extClusters?.clusters,
       weights: calibration?.weights,
     });
-    return { bins, longPool, shortPool, clusters, cvd, verdict, marketRegime, updatedAt: Date.now() };
-  }, [market.candles, market.liqEvents, market.bookImbalance, market.xCfundingGap, market.oi, market.fundingRate, market.fundingTrend, market.globalRatio, market.topRatio, market.takerRatio, market.oiChange24h, market.oiSlope5m, market.premium, market.change24h, market.sessionLong, market.sessionShort, market.spotCvd, market.futCvd, market.micro, market.posFlow, market.optAdv, roundedSpot, tf, levs, calibration, options.data]);
+
+    // REGLA 6 (REAL ONLY): si las velas críticas son simuladas (fuente real caída),
+    // la señal direccional se BLOQUEA — el motor nunca emite LONG/SHORT con datos
+    // sintéticos. Los paneles siguen mostrando el simulador, etiquetado como tal.
+    const isSim = market.sources.klines === "sim";
+    const finalVerdict = isSim
+      ? {
+          ...verdict,
+          direction: "neutral" as const,
+          headline: "SEÑAL BLOQUEADA",
+          sub: "La fuente real de velas no está disponible. El modo REAL no fabrica señales: lo que ves es un simulador de práctica etiquetado, no una señal de mercado.",
+          scorePct: 0,
+          contrarianPct: 0,
+          momentumPct: 0,
+          confidence: 0,
+          warnings: [
+            ...verdict.warnings,
+            {
+              tone: "danger" as const,
+              text: "SEÑAL BLOQUEADA (REAL ONLY): velas simuladas — sin fuente real no se emite dirección. Reconecta o revisa tu acceso a Binance.",
+            },
+          ],
+        }
+      : verdict;
+
+    return { bins, longPool, shortPool, clusters, cvd, verdict: finalVerdict, marketRegime, updatedAt: Date.now() };
+  }, [market.candles, market.liqEvents, market.bookImbalance, market.xCfundingGap, market.oi, market.fundingRate, market.fundingTrend, market.globalRatio, market.topRatio, market.takerRatio, market.oiChange24h, market.oiSlope5m, market.premium, market.change24h, market.sessionLong, market.sessionShort, market.spotCvd, market.futCvd, market.micro, market.posFlow, market.optAdv, market.sources.klines, roundedSpot, tf, levs, calibration, options.data, extClusters]);
 
   /* ---------- track record del modelo ---------- */
   const [preds, setPreds] = useState<Prediction[]>(() => loadPredictions());

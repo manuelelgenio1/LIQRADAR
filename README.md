@@ -40,6 +40,22 @@ Si no quieres tocar tu PC:
 
 ---
 
+## 🔑 Claves opcionales (`.env`) — mejoras de precisión
+
+**LiqRadar funciona al 100% sin ninguna clave**: todo usa endpoints públicos de Binance, OKX y Bybit. Pero si quieres máxima precisión, puedes añadir dos mejoras opcionales vía el servidor local (`server.mjs`). Las credenciales **nunca van al navegador**: solo las lee tu servidor para firmar peticiones.
+
+Copia `.env.example` a `.env` y rellena (con el servidor en marcha, recarga la página):
+
+| Clave | Qué aporta | Cómo conseguirla |
+|---|---|---|
+| `BINANCE_API_KEY` + `BINANCE_API_SECRET` | **Brackets de margen REALES** por tier (MMR exacto → distancias de liquidación precisas, no la tabla pública estimada) | Binance → API Management → crear key **solo lectura** (sin trading ni retiros) |
+| `COINGLASS_API_KEY` + `EXTERNAL_LIQUIDITY_PROVIDER=coinglass` | **Clusters de liquidación externos** que refuerzan los estimados del motor (dos fuentes independientes → más confianza) | <https://www.coinglass.com/pricing> (API v4) |
+| `EXTERNAL_LIQUIDITY_URL` | Clusters desde tu propio endpoint JSON (alternativa a CoinGlass) | Debe devolver `{ clusters: [{ price, notional, side? }] }` |
+
+Cuando los brackets reales están activos, el panel **Data Truth** cambia `brackets` de *ESTIMADO* a *REAL*, y el motor usa el MMR exacto de tu cuenta.
+
+---
+
 ## 🖥️ Forma manual (terminal)
 
 ### 1. Requisitos previos

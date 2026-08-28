@@ -69,6 +69,68 @@ async function handleLeverageBracket(res) {
   }
 }
 
+/* Clusters de liquidación externos (CoinGlass v4 o endpoint JSON personalizado).
+   Las credenciales viven SOLO en el .env del servidor. Los clusters se devuelven
+   tal cual: el frontend los marca como ESTIMADOS, nunca como posiciones observadas. */
+async function handleExternalClusters(res) {
+  const env = loadEnv();
+  const provider = (env.EXTERNAL_LIQUIDITY_PROVIDER || "").toLowerCase();
+  const customUrl = env.EXTERNAL_LIQUIDITY_URL || "";
+  const cgKey = env.COINGLASS_API_KEY || "";
+
+  try {
+    let clusters = [];
+    let usedProvider = "";
+
+    if (provider === "coinglass" && cgKey) {
+      usedProvider = "coinglass";
+      const r = await fetch(
+        "https://open-api-v4.coinglass.com/api/futures/liquidation/v2/home?symbol=BTC&timeType=h1",
+        { headers: { accept: "application/json", CG_API_KEY: cgKey } }
+      );
+      if (!r.ok) throw new Error(`CoinGlass HTTP ${r.status}`);
+      const j = await r.json();
+      const list = j?.data?.liquidationData ?? j?.data ?? [];
+      clusters = Array.isArray(list)
+        ? list.map((x) => ({
+            price: Number(x.price ?? x.srPrice ?? x.p ?? 0),
+            notional: Number(x.sumOpenInterest ?? x.volUsd ?? x.amount ?? 0),
+            side: typeof x.side === "string" ? x.side : undefined,
+          }))
+        : [];
+    } else if (customUrl) {
+      usedProvider = "custom";
+      const headers = { accept: "application/json" };
+      if (env.EXTERNAL_LIQUIDITY_TOKEN) headers["Authorization"] = `Bearer ${env.EXTERNAL_LIQUIDITY_TOKEN}`;
+      const r = await fetch(customUrl, { headers });
+      if (!r.ok) throw new Error(`endpoint HTTP ${r.status}`);
+      const j = await r.json();
+      const list = Array.isArray(j) ? j : j?.clusters ?? j?.data ?? [];
+      clusters = Array.isArray(list)
+        ? list.map((x) => ({
+            price: Number(x.price ?? x.p ?? 0),
+            notional: Number(x.notional ?? x.amount ?? x.volUsd ?? 0),
+            side: typeof x.side === "string" ? x.side : undefined,
+          }))
+        : [];
+    } else {
+      res.writeHead(200, { ...CORS, "Content-Type": "application/json" });
+      return res.end(
+        JSON.stringify({
+          error:
+            "sin proveedor configurado: define COINGLASS_API_KEY (con EXTERNAL_LIQUIDITY_PROVIDER=coinglass) o EXTERNAL_LIQUIDITY_URL en .env",
+        })
+      );
+    }
+
+    res.writeHead(200, { ...CORS, "Content-Type": "application/json" });
+    res.end(JSON.stringify({ provider: usedProvider, clusters }));
+  } catch (e) {
+    res.writeHead(502, { ...CORS, "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: e.message ?? "fallo consultando proveedor externo" }));
+  }
+}
+
 const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -107,6 +169,15 @@ const server = http.createServer(async (req, res) => {
         return res.end();
       }
       return await handleLeverageBracket(res);
+    }
+
+    // API local: clusters de liquidación externos (CoinGlass / endpoint personalizado)
+    if (urlPath === "/api/externalClusters") {
+      if (req.method === "OPTIONS") {
+        res.writeHead(204, CORS);
+        return res.end();
+      }
+      return await handleExternalClusters(res);
     }
 
     let filePath = normalize(join(ROOT, urlPath));

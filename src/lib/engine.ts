@@ -6,6 +6,7 @@
    ============================================================ */
 
 import type { MarketRegime, OIRegime } from "./regime";
+import type { ExternalCluster } from "./externalLiquidity";
 
 export interface Candle {
   time: number; // unix seconds
@@ -138,6 +139,7 @@ export interface VerdictInput {
   optSkew?: number | null; // IV put OTM − IV call OTM
   optMaxPain?: number | null;
   marketRegime?: MarketRegime; // régimen state-first (guardia de dirección)
+  externalClusters?: ExternalCluster[]; // clusters externos (CoinGlass/custom) — ESTIMADOS, opcionales
   weights?: Record<string, number>; // pesos calibrados (opcional, sobrescriben los base)
 }
 
@@ -197,7 +199,8 @@ export function estimateLiquidationMap(
   rangePct: number,
   binsCount = 58,
   oiUsdt = 0,
-  nearPct = 2
+  nearPct = 2,
+  externalClusters?: ExternalCluster[]
 ): { bins: LiqBin[]; longPool: number; shortPool: number; nearLongPool: number; nearShortPool: number; clusters: Cluster[] } {
   const hi = spot * (1 + rangePct);
   const lo = spot * (1 - rangePct);
@@ -317,6 +320,39 @@ export function estimateLiquidationMap(
       };
     })
     .sort((a, b) => b.estNotional * b.intensity - a.estNotional * a.intensity);
+
+  // Refuerzo con clusters EXTERNOS (CoinGlass/custom, marcados ESTIMADOS).
+  // Si un cluster estimado coincide (±0.5%) con uno externo del mismo lado, su
+  // nocional se refuerza: dos fuentes independientes apuntan al mismo nivel.
+  // Los externos muy grandes sin coincidencia se añaden como clusters "E".
+  if (externalClusters && externalClusters.length > 0 && spot > 0) {
+    const TOL = 0.005;
+    const used = new Set<number>();
+    for (const ext of externalClusters) {
+      if (!Number.isFinite(ext.price) || ext.price <= 0) continue;
+      const extSide: "long" | "short" =
+        ext.side === "long" ? "long" : ext.side === "short" ? "short" : ext.price < spot ? "long" : "short";
+      const match = clusters.findIndex(
+        (c) => !used.has(c.price as number) && c.side === extSide && Math.abs(c.price - ext.price) / ext.price <= TOL
+      );
+      if (match >= 0) {
+        used.add(clusters[match].price as number);
+        const boost = ext.sideOrigin === "provider" ? 0.45 : 0.25; // más peso si el lado viene del proveedor
+        clusters[match] = { ...clusters[match], estNotional: clusters[match].estNotional * (1 + boost) };
+      } else if (ext.notional > 0) {
+        // cluster externo sin coincidencia estimada: se añade (lado por posición o proveedor)
+        clusters.push({
+          price: ext.price,
+          intensity: 0.6,
+          side: extSide,
+          estNotional: ext.notional,
+          distancePct: Math.abs((ext.price - spot) / spot) * 100,
+          tag: "E",
+        });
+      }
+    }
+    clusters.sort((a, b) => b.estNotional * b.intensity - a.estNotional * a.intensity);
+  }
 
   return { bins, longPool, shortPool, nearLongPool, nearShortPool, clusters };
 }
