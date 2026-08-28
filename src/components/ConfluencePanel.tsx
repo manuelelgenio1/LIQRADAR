@@ -44,7 +44,7 @@ export function ConfluencePanel({ spot, confluence }: { spot: number; confluence
             ¿Coinciden los tres horizontes?
           </h2>
           <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-mist">
-            El motor se ejecuta <b className="text-fog">por separado en 12h, 24h y 72h</b>. Cuando todos miran al mismo
+            El motor se ejecuta <b className="text-fog">por separado en 1h, 4h y 1d</b>. Cuando todos miran al mismo
             lado, la probabilidad de que el barrido ocurra sube mucho; cuando discrepan, la señal es débil y conviene
             esperar. Esta es la técnica que más filtra falsas señales — y ya está integrada en el índice de confiabilidad.
           </p>

@@ -49,12 +49,14 @@ import { SectionGroup } from "./components/SectionGroup";
 import { MiniNav, type ZoneDef } from "./components/MiniNav";
 import { AlertCenter, type SniperCfg, type PriceLevel } from "./components/AlertCenter";
 import { SniperToast, type SniperInfo } from "./components/SniperToast";
+import { AbsorptionToast, type AbsorptionInfo } from "./components/AbsorptionToast";
 import { LevelToast, type LevelHit } from "./components/LevelToast";
 import { RiskPanel } from "./components/RiskPanel";
 import { Journal } from "./components/Journal";
 import { OnboardingTour } from "./components/OnboardingTour";
 import { loadCalibration, loadHitRate, saveHitRate, type Calibration } from "./lib/calibration";
 import { OrderBookPanel } from "./components/OrderBookPanel";
+import { L2Heatmap } from "./components/L2Heatmap";
 
 const STEPS = [
   {
@@ -456,6 +458,25 @@ export default function App() {
   };
   const removeLevel = (id: string) => setPriceLevels((ls) => ls.filter((l) => l.id !== id));
 
+  /* ---------- alertas por absorción (flujo agresivo absorbido por liquidez pasiva) ---------- */
+  const [absorption, setAbsorption] = useState<AbsorptionInfo | null>(null);
+  const lastAbsRef = useRef(0);
+  useEffect(() => {
+    const abs = market.micro?.absorption;
+    if (!abs || abs.side === "none" || abs.score < 0.5) return;
+    const now = Date.now();
+    if (now - lastAbsRef.current < 60_000) return; // una alerta por minuto como mucho
+    lastAbsRef.current = now;
+    setAbsorption({ side: abs.side, score: abs.score, note: abs.note, at: now });
+    setLastFire(now);
+    if (soundOn) playMagnet();
+    sendWebhook("absorcion", {
+      lado: abs.side === "bid" ? "alcista (ventas absorbidas)" : "bajista (compras absorbidas)",
+      fuerza: Math.round(abs.score * 100),
+      spot: market.spot,
+    });
+  }, [market.micro, market.spot, soundOn, sendWebhook]);
+
   useEffect(() => {
     const spot = market.spot;
     if (!Number.isFinite(spot) || spot <= 0) return;
@@ -579,6 +600,7 @@ export default function App() {
   const r18 = useReveal();
   const r19 = useReveal();
   const r20 = useReveal();
+  const r21 = useReveal();
 
   /* badges de estado para las cabeceras de zona */
   const vDir = analysis?.verdict.direction;
@@ -607,6 +629,7 @@ export default function App() {
       <FlipAlert flip={flip} onDismiss={() => setFlip(null)} />
       <SniperToast s={sniperAlert} onDismiss={() => setSniperAlert(null)} />
       <LevelToast hit={levelHit} onDismiss={() => setLevelHit(null)} />
+      <AbsorptionToast a={absorption} onDismiss={() => setAbsorption(null)} />
       <OnboardingTour forceOpen={tourOpen} onCloseRequest={() => setTourOpen(false)} />
 
       <div className="relative z-10">
@@ -850,6 +873,11 @@ export default function App() {
           {/* order flow L2 */}
           <section className="panel reveal mt-5" ref={r11}>
             <OrderBookPanel spot={market.spot} l2={market.l2} micro={market.micro} />
+          </section>
+
+          {/* heatmap L2 histórico (captura real) */}
+          <section className="panel reveal mt-5" ref={r21}>
+            <L2Heatmap frames={market.l2?.frames ?? []} historySec={market.micro?.historySec ?? 0} />
           </section>
 
           {/* heatmap de funding por exchange */}
