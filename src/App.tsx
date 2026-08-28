@@ -40,7 +40,9 @@ import { PaperAgentPanel } from "./components/PaperAgentPanel";
 import { usePaperAgent } from "./hooks/usePaperAgent";
 import { useOptionsSentiment } from "./hooks/useOptionsSentiment";
 import { AuditLogPanel } from "./components/AuditLogPanel";
+import { DataTruthPanel } from "./components/DataTruthPanel";
 import { installGlobalErrorHandlers, logAudit } from "./lib/auditLog";
+import { markSource } from "./lib/dataTruth";
 import { SectionGroup } from "./components/SectionGroup";
 import { MiniNav, type ZoneDef } from "./components/MiniNav";
 import { AlertCenter, type SniperCfg, type PriceLevel } from "./components/AlertCenter";
@@ -459,6 +461,18 @@ export default function App() {
     sendWebhook("prueba", { mensaje: "LiqRadar conectado: recibirás giros de rumbo, zonas magnéticas y señales francotirador" });
   };
 
+  /* ---------- data truth: fuentes que no se marcan solas ---------- */
+  useEffect(() => {
+    markSource("open_interest", market.oi > 0 ? "real" : "unavailable", "futures/data · Binance");
+    markSource("liquidaciones", market.sources.liq === "live" ? "real" : "unavailable", "forceOrder observado · Binance");
+    markSource("clusters", "estimated", "modelo propio: velas + apalancamiento + OI");
+    markSource(
+      "opciones",
+      market.optAdv?.atmIv != null || market.optAdv?.skew != null ? "real" : "unavailable",
+      market.optAdv?.note || "eapi público · Binance"
+    );
+  }, [market.oi, market.sources.liq, market.optAdv]);
+
   /* ---------- Agente LiqRadar: paper trading autónomo ---------- */
   const agent = usePaperAgent(analysis?.verdict ?? null, market.spot, confluence, soundOn, sendWebhook);
 
@@ -582,7 +596,7 @@ export default function App() {
           {/* régimen de volatilidad */}
           <section className="reveal mb-5" ref={r14}>
             {analysis ? (
-              <RegimeBadge regime={analysis.verdict.regime} />
+              <RegimeBadge regime={analysis.verdict.regime} market={analysis.marketRegime} />
             ) : (
               <div className="flex h-14 animate-pulse items-center justify-center rounded-lg border border-line/50 font-mono text-xs text-dusk">
                 MIDIENDO VOLATILIDAD…
@@ -849,9 +863,10 @@ export default function App() {
                   oi={market.oi}
                   oiChange24h={market.oiChange24h}
                   change24h={market.change24h}
-                  cvdPct={analysis.cvd.cvdPct}
-                  cvdNet={analysis.cvd.cvdNet}
+                  cvdPct={market.spotCvd.trades > 50 ? market.spotCvd.pct5m : analysis.cvd.cvdPct}
+                  cvdNet={market.spotCvd.trades > 50 ? market.spotCvd.cvd5m : analysis.cvd.cvdNet}
                   cvdSeries={analysis.cvd.series}
+                  cvdReal={market.spotCvd.trades > 50}
                   optionsPutCall={options.data?.putCallRatio ?? null}
                   optionsTotalOi={options.data?.totalOi ?? null}
                   optionsLoading={options.loading}
@@ -882,6 +897,11 @@ export default function App() {
           {/* registro de auditoría */}
           <section className="panel reveal mt-5" ref={r19}>
             <AuditLogPanel />
+          </section>
+
+          {/* data truth: proveniencia de cada dato */}
+          <section className="panel reveal mt-5">
+            <DataTruthPanel />
           </section>
 
           {/* benchmark competitivo */}

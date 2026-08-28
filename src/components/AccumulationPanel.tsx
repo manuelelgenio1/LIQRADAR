@@ -34,6 +34,7 @@ interface Props {
   cvdPct: number;
   cvdNet: number;
   cvdSeries: number[];
+  cvdReal?: boolean; // true = delta de trades reales (aggTrade), no derivado de velas
   optionsPutCall: number | null; // put/call de opciones por OI (null = sin datos)
   optionsTotalOi: number | null; // USDT
   optionsLoading: boolean;
@@ -147,7 +148,7 @@ export function AccumulationPanel(p: Props) {
             />
           </div>
           <p className="mt-1.5 text-[11px] leading-snug text-dusk">
-            {p.topRatio < 1 ? "Las ballenas están vendidas: cuidado con el squeeze." : "Las ballenas están compradas: buscan liquidez abajo."}
+            {p.topRatio < 1 ? "Top traders netos en short: combustible para un squeeze alcista." : "Top traders netos en long: su liquidez vive abajo."}
           </p>
         </div>
 
@@ -177,7 +178,17 @@ export function AccumulationPanel(p: Props) {
 
         {/* CVD */}
         <div className="rounded-lg border border-line/70 bg-ink-950/50 p-4 transition-transform duration-200 hover:-translate-y-0.5">
-          <span className="panel-tag">delta de takers (CVD)</span>
+          <span className="flex items-center gap-2">
+            <span className="panel-tag">delta de takers (CVD)</span>
+            <span
+              className={`rounded-sm px-1.5 py-0.5 font-mono text-[8px] font-700 tracking-wider ${
+                p.cvdReal ? "bg-long/15 text-long-hi" : "bg-line/40 text-dusk"
+              }`}
+              title={p.cvdReal ? "Delta calculado con trades ejecutados reales (aggTrade, ventana 5m)" : "Derivado de velas: el stream de trades aún no acumula muestra suficiente"}
+            >
+              {p.cvdReal ? "REAL" : "VELAS"}
+            </span>
+          </span>
           <div className={`mt-2 font-mono text-xl font-700 tabular-nums ${p.cvdPct >= 0 ? "text-short" : "text-long"}`}>
             {p.cvdPct >= 0 ? "+" : ""}
             {(p.cvdPct * 100).toFixed(1)}%

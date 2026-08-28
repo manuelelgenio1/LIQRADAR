@@ -14,12 +14,12 @@ function spectrumPos(atrPct: number): number {
   return Math.min(100, Math.max(2, (atrPct / top) * 100));
 }
 
-export function RegimeBadge({ regime }: { regime: RegimeInfo }) {
+export function RegimeBadge({ regime, market }: { regime: RegimeInfo; market?: MarketRegime | null }) {
   const { label, color, atrPct, note, windowScale } = regime;
   const pos = spectrumPos(atrPct);
 
   return (
-    <div className="flex items-center gap-4 rounded-lg border border-line/60 bg-ink-950/60 px-4 py-3">
+    <div className="flex flex-wrap items-center gap-4 rounded-lg border border-line/60 bg-ink-950/60 px-4 py-3">
       {/* etiqueta de régimen */}
       <div className="flex items-center gap-2.5">
         <span
@@ -36,6 +36,18 @@ export function RegimeBadge({ regime }: { regime: RegimeInfo }) {
           <div className="panel-tag">régimen de volatilidad</div>
         </div>
       </div>
+
+      {/* régimen de mercado state-first (guardia de la dirección) */}
+      {market && (
+        <div className="flex items-center gap-2.5 rounded-md border px-3 py-1.5" style={{ borderColor: `${market.color}44`, background: `${market.color}0d` }}>
+          <span className="font-mono text-[10px] font-700 tracking-[0.14em]" style={{ color: market.color }}>
+            {market.label}
+          </span>
+          <span className="hidden font-mono text-[9.5px] text-dusk md:block" title={market.note}>
+            {market.allowUp && market.allowDown ? "ambos lados abiertos" : !market.allowUp && !market.allowDown ? "sin ventaja · señales bloqueadas" : market.allowUp ? "ventaja ▲ LONG" : "ventaja ▼ SHORT"}
+          </span>
+        </div>
+      )}
 
       {/* espectro */}
       <div className="min-w-[110px] flex-1">
