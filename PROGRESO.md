@@ -7,9 +7,9 @@
 
 ## 📍 ESTADO ACTUAL
 
-**Build:** ✅ limpio (93 módulos, 0 errores de tipos)
+**Build:** ✅ limpio (95 módulos, 0 errores de tipos)
 **Fases del handoff V5:** 1 ✅ · 2 ✅ · 3 ✅ · 4 ✅
-**Último bloque completado:** Reestructuración de temporalidades + heatmap L2 histórico
+**Último bloque completado:** Fixes de alineación post-temporalidades + alertas por absorción
 
 ---
 
@@ -59,6 +59,13 @@
 - [x] Confluencia MTF alineada (1h/4h/1d)
 - [x] **Heatmap L2 histórico** (canvas tiempo×precio con la captura real) — panel 06d
 - [x] Indicador "captura desde" honesto (la historia empieza al abrir la app, no se inventa pasado)
+
+### Fixes de alineación post-temporalidades (detectados en revisión)
+- [x] **Signo del factor "barrida"** — estaba invertido: decía "combustible gastado" pero sumaba a favor del movimiento. Ahora `score = −sweep` (rechazo = reversión). Bug de lógica real.
+- [x] **Ventana temporal acotada por TF** — el tope estaba fijo en 96h; en 1D/1W daba "2–96h" para objetivos a semanas. Ahora cada TF define su tope (`winH`: 15m→48h … 1w→2160h).
+- [x] **Umbral de cascadas** — era 1 ATR horario (~0.15% en 15M), casi nunca se activaba en TFs cortos. Ahora `max(ATR, 0.25%)`.
+- [x] **Eje temporal del gráfico** — mostraba horas (00:00) en velas 1D/1W. Ahora alterna fechas/horas según la categoría del TF.
+- [x] **Nota de confluencia** — aclarado que 1h/4h/1d son horizontes de confirmación fijos (no siguen al TF del gráfico).
 
 ### Cola de mejoras pendientes (en orden)
 1. [x] **Alertas por absorción** — toast + sonido + webhook cuando fuerza ≥50% (1/min). `bid`=alcista · `ask`=bajista

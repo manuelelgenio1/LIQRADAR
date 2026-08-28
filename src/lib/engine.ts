@@ -140,6 +140,7 @@ export interface VerdictInput {
   optMaxPain?: number | null;
   marketRegime?: MarketRegime; // régimen state-first (guardia de dirección)
   externalClusters?: ExternalCluster[]; // clusters externos (CoinGlass/custom) — ESTIMADOS, opcionales
+  maxWindowH?: number; // tope de la ventana temporal según el timeframe elegido (15m→48h … 1w→2160h)
   weights?: Record<string, number>; // pesos calibrados (opcional, sobrescriben los base)
 }
 
@@ -761,7 +762,9 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         : sw > 0
           ? "Barrida de SHORTS detectada (mecha arriba) → el squeeze alcista ya descargó"
           : "Barrida de LONGS detectada (mecha abajo) → la caza de longs ya descargó",
-    score: clamp(sw) * sweepDamp,
+    // signo invertido: si la barrida ya ocurrió y el precio volvió, ese combustible
+    // se gastó → contribuye EN CONTRA del movimiento barrido (rechazo = reversión)
+    score: clamp(-sw) * sweepDamp,
     weight: 0.04,
   });
 
@@ -1004,10 +1007,12 @@ export function computeVerdict(inp: VerdictInput): Verdict {
         ? lp.up.cluster ?? shorts[0] ?? null
         : null;
 
-  // cascadas: clusters dentro de 1 ATR del spot → un sweep puede encadenarse
+  // cascadas: clusters a menos de 1 ATR (con suelo de 0.25% para que en timeframes
+  // cortos, donde el ATR horario es diminuto, la detección siga siendo útil)
+  const cascadeReach = Math.max(atrPct, 0.25);
   const cascade =
     atrPct > 0
-      ? inp.clusters.filter((c) => c.distancePct <= atrPct).sort((a, b) => a.distancePct - b.distancePct)
+      ? inp.clusters.filter((c) => c.distancePct <= cascadeReach).sort((a, b) => a.distancePct - b.distancePct)
       : [];
   if (cascade.length >= 2) {
     warnings.push({
@@ -1035,7 +1040,8 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   if (target && inp.atr1h > 0) {
     const h = Math.abs(target.price - inp.spot) / inp.atr1h;
     const ws = regime.windowScale;
-    windowH = [Math.max(1, Math.round(h * 0.5 * ws)), Math.min(96, Math.max(2, Math.round(h * 1.7 * ws)))];
+    const cap = inp.maxWindowH ?? 96; // el tope escala con el timeframe elegido
+    windowH = [Math.max(1, Math.round(h * 0.5 * ws)), Math.min(cap, Math.max(2, Math.round(h * 1.7 * ws)))];
   }
 
   let headline = "RANGO · SIN SESGO";

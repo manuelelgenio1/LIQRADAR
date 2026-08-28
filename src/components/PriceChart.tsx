@@ -19,6 +19,7 @@ interface Props {
   spot: number;
   oiHistory?: OIPoint[];
   levels?: { price: number; label: string }[];
+  intraday?: boolean; // false en 1D/1W: el eje muestra fechas, no horas
 }
 
 interface HoverCandle {
@@ -29,7 +30,7 @@ interface HoverCandle {
   t: number;
 }
 
-export function PriceChart({ candles, clusters, spot, oiHistory, levels }: Props) {
+export function PriceChart({ candles, clusters, spot, oiHistory, levels, intraday = true }: Props) {
   const elRef = useRef<HTMLDivElement | null>(null);
   const [hover, setHover] = useState<HoverCandle | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -55,7 +56,7 @@ export function PriceChart({ candles, clusters, spot, oiHistory, levels }: Props
         horzLines: { color: "rgba(93,112,153,0.09)" },
       },
       rightPriceScale: { borderColor: "rgba(27,44,74,0.9)" },
-      timeScale: { borderColor: "rgba(27,44,74,0.9)", timeVisible: true, secondsVisible: false },
+      timeScale: { borderColor: "rgba(27,44,74,0.9)", timeVisible: intraday, secondsVisible: false },
       crosshair: {
         vertLine: { color: "rgba(63,182,255,0.4)", labelBackgroundColor: "#0d1a30" },
         horzLine: { color: "rgba(63,182,255,0.4)", labelBackgroundColor: "#0d1a30" },
@@ -130,7 +131,8 @@ export function PriceChart({ candles, clusters, spot, oiHistory, levels }: Props
       cdRef.current = null;
       linesRef.current = [];
     };
-  }, []);
+    // se recrea al alternar entre temporalidades intradía y diarias (cambia el eje de tiempo)
+  }, [intraday]);
 
   useEffect(() => {
     if (!seriesRef.current || candles.length === 0) return;

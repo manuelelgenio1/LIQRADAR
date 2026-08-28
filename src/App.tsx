@@ -243,6 +243,7 @@ export default function App() {
       optMaxPain: market.optAdv?.maxPain ?? null,
       marketRegime,
       externalClusters: extClusters?.clusters,
+      maxWindowH: cfg.winH,
       weights: calibration?.weights,
     });
 
@@ -774,6 +775,7 @@ export default function App() {
                     spot={market.spot}
                     oiHistory={market.oiHistory}
                     levels={keyLevels.filter((l) => ["PDH", "PDL", "DO", "WO"].includes(l.short)).map((l) => ({ price: l.price, label: l.label }))}
+                    intraday={TF_CONFIG[tf].ms < 86_400_000}
                   />
                 ) : (
                   <div className="flex h-[340px] animate-pulse items-center justify-center rounded-md border border-line/50 font-mono text-xs text-dusk sm:h-[400px]">

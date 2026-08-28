@@ -30,13 +30,13 @@ export type Timeframe = "15m" | "1h" | "4h" | "1d" | "1w";
 
 export const TF_CONFIG: Record<
   Timeframe,
-  { interval: string; limit: number; ms: number; range: number; label: string; lookback: number; desc: string }
+  { interval: string; limit: number; ms: number; range: number; label: string; lookback: number; desc: string; winH: number }
 > = {
-  "15m": { interval: "15m", limit: 96, ms: 900_000, range: 0.008, label: "15M", lookback: 20, desc: "scalping" },
-  "1h": { interval: "1h", limit: 120, ms: 3_600_000, range: 0.016, label: "1H", lookback: 22, desc: "intradía" },
-  "4h": { interval: "4h", limit: 96, ms: 14_400_000, range: 0.035, label: "4H", lookback: 24, desc: "swing" },
-  "1d": { interval: "1d", limit: 90, ms: 86_400_000, range: 0.07, label: "1D", lookback: 26, desc: "posición" },
-  "1w": { interval: "1w", limit: 52, ms: 604_800_000, range: 0.15, label: "1W", lookback: 26, desc: "macro" },
+  "15m": { interval: "15m", limit: 96, ms: 900_000, range: 0.008, label: "15M", lookback: 20, desc: "scalping", winH: 48 },
+  "1h": { interval: "1h", limit: 120, ms: 3_600_000, range: 0.016, label: "1H", lookback: 22, desc: "intradía", winH: 96 },
+  "4h": { interval: "4h", limit: 96, ms: 14_400_000, range: 0.035, label: "4H", lookback: 24, desc: "swing", winH: 240 },
+  "1d": { interval: "1d", limit: 90, ms: 86_400_000, range: 0.07, label: "1D", lookback: 26, desc: "posición", winH: 720 },
+  "1w": { interval: "1w", limit: 52, ms: 604_800_000, range: 0.15, label: "1W", lookback: 26, desc: "macro", winH: 2160 },
 };
 
 export interface MarketData {
