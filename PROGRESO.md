@@ -61,6 +61,9 @@
 - [x] Indicador "captura desde" honesto (la historia empieza al abrir la app, no se inventa pasado)
 
 ### Fixes de alineación post-temporalidades (detectados en revisión)
+- [x] **Rangos de precio por TF** — eran más estrechos que las distancias de liquidación (100x=0.6%, 50x=1.5%, 25x=3.5%, 10x=9%), así que los clusters quedaban fuera del mapa y el lado short desaparecía. Ensanchados (15m=4.5%…1W=13%) y alineados en confluencia.
+- [x] **Peso de colocaciones simétricas (`close`)** 0.45 → 0.6 en engine.ts y heatmap.ts, para equilibrar ambos lados frente a tendencias fuertes.
+- [x] **MicroReplay: updater impuro** — `setPlaying(false)` se llamaba dentro del updater de `setPlayT` (React exige updaters puros). Extraído a un efecto aparte.
 - [x] **Signo del factor "barrida"** — estaba invertido: decía "combustible gastado" pero sumaba a favor del movimiento. Ahora `score = −sweep` (rechazo = reversión). Bug de lógica real.
 - [x] **Ventana temporal acotada por TF** — el tope estaba fijo en 96h; en 1D/1W daba "2–96h" para objetivos a semanas. Ahora cada TF define su tope (`winH`: 15m→48h … 1w→2160h).
 - [x] **Umbral de cascadas** — era 1 ATR horario (~0.15% en 15M), casi nunca se activaba en TFs cortos. Ahora `max(ATR, 0.25%)`.

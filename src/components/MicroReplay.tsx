@@ -64,26 +64,24 @@ export function MicroReplay({ frames, liq }: { frames: L2Frame[]; liq: LiqEvent[
     if (win && playT === 0) setPlayT(win.t1);
   }, [win, playT]);
 
-  // motor de reproducción (rAF)
+  // motor de reproducción (rAF) — el updater debe ser puro: solo actualiza el playhead
   useEffect(() => {
     if (!playing || !win) return;
     lastTsRef.current = performance.now();
     const step = (ts: number) => {
       const dt = ts - lastTsRef.current;
       lastTsRef.current = ts;
-      setPlayT((prev) => {
-        const next = prev + dt * speed;
-        if (next >= win.t1) {
-          setPlaying(false);
-          return win.t1;
-        }
-        return next;
-      });
+      setPlayT((prev) => Math.min(prev + dt * speed, win.t1));
       rafRef.current = requestAnimationFrame(step);
     };
     rafRef.current = requestAnimationFrame(step);
     return () => cancelAnimationFrame(rafRef.current);
   }, [playing, speed, win]);
+
+  // detiene la reproducción al llegar al final (fuera del updater, que debe ser puro)
+  useEffect(() => {
+    if (playing && win && playT >= win.t1) setPlaying(false);
+  }, [playing, playT, win]);
 
   // refresca la vista periódicamente para captar eventos nuevos en vivo
   useEffect(() => {
