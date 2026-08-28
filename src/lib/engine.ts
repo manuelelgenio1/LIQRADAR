@@ -225,9 +225,13 @@ export function estimateLiquidationMap(
   const winSpan = Math.max(winHigh - winLow, 0);
   const margin = Math.max(spot * wantBand * 0.6, winSpan * 0.12, spot * 0.012);
 
-  // unión: nunca más estrecho que el rango configurado, más ancho si la ventana lo exige
-  const hi = Math.max(spot * (1 + rangePct), Math.max(winHigh, spot) + margin);
-  const lo = Math.min(spot * (1 - rangePct), Math.min(winLow, spot) - margin);
+  // unión: nunca más estrecho que el rango configurado, más ancho si la ventana lo exige,
+  // pero ACOTADO a la zona de liquidación relevante (las bandas viven a ≤ dist. máx de
+  // apalancamiento del precio reciente; un eje desbocado comprime las bandas hasta hacerlas
+  // invisibles en 1d/1w).
+  const cap = 0.15;
+  const hi = Math.min(Math.max(spot * (1 + rangePct), Math.max(winHigh, spot) + margin), spot * (1 + cap));
+  const lo = Math.max(Math.min(spot * (1 - rangePct), Math.min(winLow, spot) - margin), spot * (1 - cap));
   const step = (hi - lo) / binsCount;
   const raw = new Float64Array(binsCount);
   const n = candles.length;
@@ -291,6 +295,23 @@ export function estimateLiquidationMap(
   const poolScale = oiUsdt > 0 ? oiUsdt * 0.065 : totalQuote * 0.05;
   const totalSmooth = Array.from(smooth).reduce((a, b) => a + b, 0) || 1;
 
+  // NORMALIZACIÓN POR LADO: en una tendencia, un lado acumula un pico enorme y el otro
+  // queda a una fracción mínima del máximo GLOBAL → sus barras se pintan casi invisibles
+  // ("no hay shorts" en 1h/4h/1d/1w). Normalizar cada lado contra su propio máximo hace que
+  // AMBOS muestren su estructura a escala completa. El valor absoluto (estNotional, pools)
+  // se conserva aparte para el equilibrio real.
+  let maxLong = 1e-9;
+  let maxShort = 1e-9;
+  for (let i = 0; i < binsCount; i++) {
+    const p = hi - (i + 0.5) * step;
+    if (p < spot) {
+      if (smooth[i] > maxLong) maxLong = smooth[i];
+    } else if (smooth[i] > maxShort) maxShort = smooth[i];
+  }
+  // piso relativo al máximo global: no sobre-amplificar un lado que sea puro ruido
+  maxLong = Math.max(maxLong, max * 0.12);
+  maxShort = Math.max(maxShort, max * 0.12);
+
   const bins: LiqBin[] = [];
   let longPool = 0;
   let shortPool = 0;
@@ -310,10 +331,10 @@ export function estimateLiquidationMap(
     }
     const parts: LevPart[] = [];
     for (const L of leverages) {
-      const v = smoothLev[L][i] / max;
+      const v = smoothLev[L][i] / (side === "long" ? maxLong : maxShort);
       if (v > 0.004) parts.push({ lev: L, v });
     }
-    bins.push({ price, intensity: smooth[i] / max, side, estNotional, parts });
+    bins.push({ price, intensity: smooth[i] / (side === "long" ? maxLong : maxShort), side, estNotional, parts });
   }
 
   // detección de concentraciones (picos locales)
