@@ -66,6 +66,7 @@
 - [x] **Umbral de cascadas** — era 1 ATR horario (~0.15% en 15M), casi nunca se activaba en TFs cortos. Ahora `max(ATR, 0.25%)`.
 - [x] **Eje temporal del gráfico** — mostraba horas (00:00) en velas 1D/1W. Ahora alterna fechas/horas según la categoría del TF.
 - [x] **Nota de confluencia** — aclarado que 1h/4h/1d son horizontes de confirmación fijos (no siguen al TF del gráfico).
+- [x] **🔴 MAPA "SOLO LONG / SIN SHORT"** — causa raíz doble: (a) los rangos de precio por TF eran más estrechos que la distancia de liquidación de 50x/25x/10x, así que esos clusters quedaban FUERA del mapa y no se dibujaban; (b) en tendencia, las colocaciones short basadas en `low·(1+d)` (peso 0.9) caen bajo el spot y se pintan de verde, dejando el lado short ~4× más tenue. Fix: rangos ensanchados y ligados a las distancias de liq (15m=4.5%, 1h=5%, 4h=6%, 1d=8.5%, 1w=13%) + peso de las colocaciones simétricas basadas en `close` subido 0.45→0.6 en engine.ts Y heatmap.ts (modelo coherente). Confluencia alineada a los mismos rangos. Backtest ya reutiliza `estimateLiquidationMap` → calibración sincronizada.
 
 ### Cola de mejoras pendientes (en orden)
 1. [x] **Alertas por absorción** — toast + sonido + webhook cuando fuerza ≥50% (1/min). `bid`=alcista · `ask`=bajista

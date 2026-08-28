@@ -32,11 +32,15 @@ export const TF_CONFIG: Record<
   Timeframe,
   { interval: string; limit: number; ms: number; range: number; label: string; lookback: number; desc: string; winH: number }
 > = {
-  "15m": { interval: "15m", limit: 96, ms: 900_000, range: 0.008, label: "15M", lookback: 20, desc: "scalping", winH: 48 },
-  "1h": { interval: "1h", limit: 120, ms: 3_600_000, range: 0.016, label: "1H", lookback: 22, desc: "intradía", winH: 96 },
-  "4h": { interval: "4h", limit: 96, ms: 14_400_000, range: 0.035, label: "4H", lookback: 24, desc: "swing", winH: 240 },
-  "1d": { interval: "1d", limit: 90, ms: 86_400_000, range: 0.07, label: "1D", lookback: 26, desc: "posición", winH: 720 },
-  "1w": { interval: "1w", limit: 52, ms: 604_800_000, range: 0.15, label: "1W", lookback: 26, desc: "macro", winH: 2160 },
+  // `range` es el semiancho del eje de PRECIO del mapa de liquidación. Debe ser mayor
+  // que la distancia de liquidación de los apalancamientos visibles (100x=0.6%, 50x=1.5%,
+  // 25x=3.5%, 10x=9%) para que AMBOS lados (longs abajo / shorts arriba) se dibujen.
+  // Un rango menor que la distancia de un apalancamiento lo recorta por completo del mapa.
+  "15m": { interval: "15m", limit: 96, ms: 900_000, range: 0.045, label: "15M", lookback: 20, desc: "scalping", winH: 48 },
+  "1h": { interval: "1h", limit: 120, ms: 3_600_000, range: 0.05, label: "1H", lookback: 22, desc: "intradía", winH: 96 },
+  "4h": { interval: "4h", limit: 96, ms: 14_400_000, range: 0.06, label: "4H", lookback: 24, desc: "swing", winH: 240 },
+  "1d": { interval: "1d", limit: 90, ms: 86_400_000, range: 0.085, label: "1D", lookback: 26, desc: "posición", winH: 720 },
+  "1w": { interval: "1w", limit: 52, ms: 604_800_000, range: 0.13, label: "1W", lookback: 26, desc: "macro", winH: 2160 },
 };
 
 export interface MarketData {

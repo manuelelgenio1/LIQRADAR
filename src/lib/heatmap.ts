@@ -63,9 +63,9 @@ export function buildHeatmap(
         const d = liqDistance(L);
         const lw = levWeight[L] ?? 0.7;
         add(tmp, c.high * (1 - d), base * 0.9 * lw);
-        add(tmp, c.close * (1 - d), base * 0.45 * lw);
+        add(tmp, c.close * (1 - d), base * 0.6 * lw);
         add(tmp, c.low * (1 + d), base * 0.9 * lw);
-        add(tmp, c.close * (1 + d), base * 0.45 * lw);
+        add(tmp, c.close * (1 + d), base * 0.6 * lw);
       }
     }
     // suavizado vertical ligero

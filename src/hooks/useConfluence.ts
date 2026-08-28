@@ -13,10 +13,12 @@ import { fetchKlines } from "../lib/binance";
    mostrando datos reales en vez de tirar todo a neutro.
    ============================================================ */
 
+// `range` alineado con TF_CONFIG: debe cubrir la distancia de liquidación de los
+// apalancamientos visibles (≥3.5% para el 25x) o los pools se calculan degenerados.
 const TFS = [
-  { tf: "1h", label: "1 HORA", interval: "1h", limit: 96, ms: 3_600_000, range: 0.016, desc: "corto · intradía" },
-  { tf: "4h", label: "4 HORAS", interval: "4h", limit: 96, ms: 14_400_000, range: 0.035, desc: "medio · swing" },
-  { tf: "1d", label: "1 DÍA", interval: "1d", limit: 60, ms: 86_400_000, range: 0.07, desc: "largo · posición" },
+  { tf: "1h", label: "1 HORA", interval: "1h", limit: 96, ms: 3_600_000, range: 0.05, desc: "corto · intradía" },
+  { tf: "4h", label: "4 HORAS", interval: "4h", limit: 96, ms: 14_400_000, range: 0.06, desc: "medio · swing" },
+  { tf: "1d", label: "1 DÍA", interval: "1d", limit: 60, ms: 86_400_000, range: 0.085, desc: "largo · posición" },
 ];
 
 export { TFS as CONFLUENCE_TFS };

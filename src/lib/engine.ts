@@ -238,10 +238,12 @@ export function estimateLiquidationMap(
       const lw = levWeight[L] ?? 0.7;
       // longs abiertos cerca de máximos/cierre → liquidación debajo
       add(c.high * (1 - d), base * 0.9 * lw, L);
-      add(c.close * (1 - d), base * 0.45 * lw, L);
+      // cierre: entradas repartidas en la vela (componente SIMÉTRICO respecto al precio
+      // actual; refuerza ambos lados por igual y evita que una tendencia fuerte deje un lado vacío)
+      add(c.close * (1 - d), base * 0.6 * lw, L);
       // shorts abiertos cerca de mínimos/cierre → liquidación arriba
       add(c.low * (1 + d), base * 0.9 * lw, L);
-      add(c.close * (1 + d), base * 0.45 * lw, L);
+      add(c.close * (1 + d), base * 0.6 * lw, L);
     }
   });
 
