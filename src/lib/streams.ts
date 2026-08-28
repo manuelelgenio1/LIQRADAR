@@ -22,6 +22,24 @@ interface DeltaPoint {
   n: number; // notional absoluto
 }
 
+/* Anillo de trades para el REPLAY de microestructura (futuros).
+   Guarda tiempo/precio/lado/notional para poder rebobinar la cinta. */
+export interface TradeEvent {
+  t: number; // ms epoch
+  p: number; // price
+  sell: boolean; // venta agresiva
+  n: number; // notional
+}
+const TRADES_CAP = 6000;
+const futTradesBuf: TradeEvent[] = [];
+function pushTrade(e: TradeEvent) {
+  futTradesBuf.push(e);
+  if (futTradesBuf.length > TRADES_CAP) futTradesBuf.shift();
+}
+export function getFutTrades(): TradeEvent[] {
+  return futTradesBuf;
+}
+
 const CAP = 9000;
 const spotBuf: DeltaPoint[] = [];
 const futBuf: DeltaPoint[] = [];
@@ -109,6 +127,7 @@ function onMsg(market: "spot" | "fut", raw: string) {
     futNet += d;
     futTrades++;
     futLast = Date.now();
+    pushTrade({ t, p: price, sell: e.m === true, n: notional });
     markSource("trades_fut", "real");
   }
 }

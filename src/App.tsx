@@ -57,6 +57,7 @@ import { OnboardingTour } from "./components/OnboardingTour";
 import { loadCalibration, loadHitRate, saveHitRate, type Calibration } from "./lib/calibration";
 import { OrderBookPanel } from "./components/OrderBookPanel";
 import { L2Heatmap } from "./components/L2Heatmap";
+import { MicroReplay } from "./components/MicroReplay";
 
 const STEPS = [
   {
@@ -602,6 +603,7 @@ export default function App() {
   const r19 = useReveal();
   const r20 = useReveal();
   const r21 = useReveal();
+  const r22 = useReveal();
 
   /* badges de estado para las cabeceras de zona */
   const vDir = analysis?.verdict.direction;
@@ -880,6 +882,11 @@ export default function App() {
           {/* heatmap L2 histórico (captura real) */}
           <section className="panel reveal mt-5" ref={r21}>
             <L2Heatmap frames={market.l2?.frames ?? []} historySec={market.micro?.historySec ?? 0} />
+          </section>
+
+          {/* replay de microestructura */}
+          <section className="panel reveal mt-5" ref={r22}>
+            <MicroReplay frames={market.l2?.frames ?? []} liq={market.liqEvents} />
           </section>
 
           {/* heatmap de funding por exchange */}
