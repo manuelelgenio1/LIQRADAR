@@ -1,8 +1,11 @@
 /* ============================================================
    LiqRadar — motor de estimación de liquidaciones y veredicto
-   v2: margen de mantenimiento real, anclaje a OI, CVD,
-       cascadas y confianza ajustada por volatilidad
+   V5: datos reales (aggTrade, L2 secuenciado, options IV/skew,
+       Top-Trader flow), régimen state-first como guardia de
+       dirección, OI regimes y absorción.
    ============================================================ */
+
+import type { MarketRegime, OIRegime } from "./regime";
 
 export interface Candle {
   time: number; // unix seconds
@@ -122,6 +125,19 @@ export interface VerdictInput {
   sweep: number; // −1..1 detección de barrida reciente (mecha a través de un cluster)
   liqVelocity: number; // −1..1 aceleración de liquidaciones en los últimos minutos
   optionsPutCall: number; // put/call ratio de opciones por OI (1 = equilibrado)
+  /* ---------- datos REALES V5 (si faltan, el factor se omite; nunca se inventan) ---------- */
+  cvdSpotPct?: number; // CVD real spot 15m (aggTrade observado)
+  cvdFutPct?: number; // CVD real futuros 15m (aggTrade observado)
+  cvdReal?: boolean; // streams de trades vivos
+  oiRegime?: OIRegime;
+  absorbSide?: "bid" | "ask" | "none";
+  absorbScore?: number; // 0..1
+  spoofRisk?: number; // 0..100 (riesgo heurístico, nunca confirmado)
+  posFlowZ?: number | null; // z-score del Top-Trader Position Flow
+  posFlowExtreme?: "long" | "short" | null;
+  optSkew?: number | null; // IV put OTM − IV call OTM
+  optMaxPain?: number | null;
+  marketRegime?: MarketRegime; // régimen state-first (guardia de dirección)
   weights?: Record<string, number>; // pesos calibrados (opcional, sobrescriben los base)
 }
 
@@ -497,12 +513,21 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     weight: 0.07,
   });
 
-  // 4 · Top traders (posiciones)
-  const tScore = clamp((1 - inp.topRatio) * 0.95);
+  // 4 · Top-Trader Position Flow (ratio + extremos estadísticos; NO es "whale positions")
+  const z = inp.posFlowZ ?? null;
+  let tScore = clamp((1 - inp.topRatio) * 0.95);
+  let tDetail = `Ratio ${inp.topRatio.toFixed(2)} → ${inp.topRatio > 1 ? "cuentas grandes en LONG" : "cuentas grandes en SHORT"}`;
+  if (z !== null && Number.isFinite(z)) {
+    tScore = clamp(0.5 * tScore - 0.5 * clamp(z / 1.8));
+    tDetail =
+      Math.abs(z) >= 1.5
+        ? `Extremo estadístico (z=${z.toFixed(1)}): cuentas grandes ${z > 0 ? "MUY en LONG" : "MUY en SHORT"} → crowded ${z > 0 ? "bajista" : "alcista"}`
+        : `Ratio ${inp.topRatio.toFixed(2)} · z=${z.toFixed(1)} sobre 72h → ${Math.abs(z) < 0.75 ? "sin extremo" : z > 0 ? "sesgo long" : "sesgo short"}`;
+  }
   factors.push({
     id: "top",
-    label: "Posiciones de top traders",
-    detail: `Ratio ${inp.topRatio.toFixed(2)} → ${inp.topRatio > 1 ? "ballenas en LONG" : "ballenas en SHORT"}`,
+    label: "Top-Trader Position Flow",
+    detail: tDetail,
     score: tScore,
     weight: 0.07,
   });
@@ -524,14 +549,25 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     weight: 0.12,
   });
 
-  // 6 · Interés abierto + tendencia 24h
-  const oScore = clamp(Math.sign(inp.priceChange24h) * Math.min(1, Math.abs(inp.oiChange24h) / 6));
+  // 6 · OI REGIME: apalancamiento + dirección definen qué multitud se está formando
+  const oiR = inp.oiRegime ?? "NEUTRAL";
+  const oScore = oiR === "LONG_BUILD" ? -0.7 : oiR === "SHORT_BUILD" ? 0.7 : oiR === "LONG_UNWIND" ? 0.35 : oiR === "SHORT_UNWIND" ? -0.35 : 0;
+  const oiDetail =
+    oiR === "LONG_BUILD"
+      ? "Precio↑ + OI↑: longs NUEVOS apilándose → su combustible se acumula abajo"
+      : oiR === "SHORT_BUILD"
+        ? "Precio↓ + OI↑: shorts NUEVOS apilándose → su combustible se acumula arriba"
+        : oiR === "LONG_UNWIND"
+          ? "Precio↓ + OI↓: longs cerrando → la descarga bajista ya ocurrió en parte"
+          : oiR === "SHORT_UNWIND"
+            ? "Precio↑ + OI↓: shorts cerrando → la descarga alcista ya ocurrió en parte"
+            : `OI ${inp.oiChange24h >= 0 ? "+" : ""}${inp.oiChange24h.toFixed(1)}% · sin régimen claro de apalancamiento`;
   factors.push({
     id: "oi",
-    label: "Interés abierto + impulso 24h",
-    detail: `OI ${inp.oiChange24h >= 0 ? "+" : ""}${inp.oiChange24h.toFixed(1)}% · precio ${inp.priceChange24h >= 0 ? "+" : ""}${inp.priceChange24h.toFixed(1)}%`,
+    label: "Régimen de interés abierto",
+    detail: oiDetail,
     score: oScore,
-    weight: 0.06,
+    weight: 0.07,
   });
 
   // 7 · Pendiente del OI en 5m: apalancamiento fresco entrando AHORA
@@ -591,21 +627,23 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     weight: 0.04,
   });
 
-  // 10 · Delta de takers spot (CVD): compra agresiva = multitud long apilada
-  const cvdBase = clamp(-inp.cvdPct * 3);
-  const cvdScore = clamp(cvdBase + (inp.cvdDiv === "bear" ? -0.35 : inp.cvdDiv === "bull" ? 0.35 : 0));
-  factors.push({
-    id: "cvd",
-    label: "Delta spot (CVD)",
-    detail:
-      inp.cvdDiv === "bear"
-        ? "Divergencia: precio sube sin compra agresiva → compradores agotados"
-        : inp.cvdDiv === "bull"
-          ? "Divergencia: precio baja pero absorben la venta → vendedores agotados"
-          : `Compra neta ${(inp.cvdPct * 100).toFixed(1)}% del volumen → ${inp.cvdPct > 0.02 ? "multitud comprando en ask" : inp.cvdPct < -0.02 ? "multitud vendiendo en bid" : "flujo equilibrado"}`,
-    score: cvdScore,
-    weight: 0.05,
-  });
+  // 10 · CVD REAL (aggTrade spot + futuros): si no hay stream vivo, el factor se OMITE
+  if (inp.cvdReal && inp.cvdSpotPct !== undefined && inp.cvdFutPct !== undefined) {
+    const blend = 0.45 * inp.cvdSpotPct + 0.55 * inp.cvdFutPct;
+    const cvdScore = clamp(-blend * 4 + (inp.cvdDiv === "bear" ? -0.35 : inp.cvdDiv === "bull" ? 0.35 : 0));
+    factors.push({
+      id: "cvd",
+      label: "CVD real (trades observados)",
+      detail:
+        Math.abs(blend) < 0.015
+          ? `Flujo comprador/vendedor equilibrado (spot ${(inp.cvdSpotPct * 100).toFixed(1)}% · fut ${(inp.cvdFutPct * 100).toFixed(1)}%)`
+          : blend > 0
+            ? `Compra agresiva REAL ${(blend * 100).toFixed(1)}% del volumen → multitud long apilada a mercado`
+            : `Venta agresiva REAL ${(Math.abs(blend) * 100).toFixed(1)}% del volumen → multitud short apilada a mercado`,
+      score: cvdScore,
+      weight: 0.07,
+    });
+  }
   if (inp.cvdDiv === "bear") {
     warnings.push({ tone: "danger", text: "Divergencia CVD bajista: el precio sube sin compradores agresivos — combustible de long squeeze activo" });
   } else if (inp.cvdDiv === "bull") {
@@ -753,11 +791,69 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     weight: 0.03,
   });
 
+  // 18 · ABSORCIÓN real (flujo agresivo + precio que no responde + profundidad que persiste)
+  if (inp.absorbSide && inp.absorbSide !== "none" && (inp.absorbScore ?? 0) > 0.15) {
+    const aScore = (inp.absorbSide === "bid" ? 1 : -1) * clamp((inp.absorbScore ?? 0) * 1.1);
+    factors.push({
+      id: "absorb",
+      label: "Absorción (microestructura)",
+      detail:
+        inp.absorbSide === "bid"
+          ? "Ventas agresivas absorbidas por compradores pasivos: el precio no cae → posible suelo"
+          : "Compras agresivas absorbidas por vendedores pasivos: el precio no sube → posible techo",
+      score: aScore,
+      weight: 0.05,
+    });
+  }
+
+  // 19 · Opciones avanzadas: skew de volatilidad + gravedad de Max Pain (aproximaciones declaradas)
+  const skew = inp.optSkew;
+  const mp = inp.optMaxPain;
+  if ((skew !== undefined && skew !== null) || (mp !== undefined && mp !== null)) {
+    let oScoreAdv = 0;
+    const parts: string[] = [];
+    if (skew !== null && skew !== undefined && Number.isFinite(skew)) {
+      oScoreAdv += clamp((skew / 0.12) * 0.6); // puts caros → miedo de multitud → contrarian alcista
+      parts.push(`skew ${(skew * 100).toFixed(1)}pts → ${skew > 0.02 ? "puts caros (miedo)" : skew < -0.02 ? "calls caros (euforia)" : "neutro"}`);
+    }
+    if (mp !== null && mp !== undefined && Number.isFinite(mp) && inp.spot > 0) {
+      const dist = (inp.spot - mp) / inp.spot;
+      oScoreAdv += clamp(-Math.sign(dist) * Math.min(1, Math.abs(dist) / 0.04) * 0.5);
+      parts.push(`Max Pain ${fmtUsd(mp)} (${dist >= 0 ? "+" : ""}${(dist * 100).toFixed(1)}% del spot)`);
+    }
+    if (parts.length > 0) {
+      factors.push({
+        id: "optAdv",
+        label: "Opciones: skew + Max Pain",
+        detail: parts.join(" · "),
+        score: clamp(oScoreAdv),
+        weight: 0.04,
+      });
+    }
+  }
+
+  // Riesgo spoof/pull: NO es un factor direccional — reduce confianza y avisa (heurística, nunca confirmado)
+  if ((inp.spoofRisk ?? 0) >= 45) {
+    warnings.push({
+      tone: "warn",
+      text: `Riesgo de spoof/pull detectado (${Math.round(inp.spoofRisk ?? 0)}/100): liquidez grande aparece y se retira rápido. Es una heurística, no manipulación confirmada — desconfía de movimientos bruscos.`,
+    });
+  }
+
   // recalibración: si hay pesos calibrados (desde el laboratorio), se aplican aquí
   if (inp.weights && Object.keys(inp.weights).length > 0) {
     for (const f of factors) {
       const cw = inp.weights[f.id];
       if (typeof cw === "number" && cw > 0) f.weight = cw;
+    }
+  }
+
+  // normalización: los factores son condicionales (solo existen si hay datos reales),
+  // así que la suma de pesos presentes se escala a 1.00 exacto
+  {
+    const wSum = factors.reduce((a, f) => a + f.weight, 0);
+    if (wSum > 0 && Math.abs(wSum - 1) > 1e-6) {
+      for (const f of factors) f.weight = f.weight / wSum;
     }
   }
 
@@ -784,6 +880,8 @@ export function computeVerdict(inp: VerdictInput): Verdict {
     mtf: "momentum",
     momentum: "momentum",
     book: "momentum",
+    absorb: "momentum",
+    optAdv: "contrarian",
   };
   const tagged: Factor[] = factors.map((f) => ({ ...f, school: SCHOOL_OF[f.id] ?? "momentum" }));
 
@@ -824,6 +922,19 @@ export function computeVerdict(inp: VerdictInput): Verdict {
   let direction: Verdict["direction"] = "neutral";
   if (drive > 0.06) direction = "up";
   else if (drive < -0.06) direction = "down";
+
+  // RÉGIMEN STATE-FIRST: el estado del mercado es guardia antes de emitir dirección.
+  // Si el régimen no da ventaja para el lado propuesto, la señal se bloquea a NEUTRO.
+  const mktRegime = inp.marketRegime;
+  if (mktRegime) {
+    if (direction === "up" && !mktRegime.allowUp) {
+      warnings.push({ tone: "warn", text: `Señal alcista BLOQUEADA por régimen ${mktRegime.label}: ${mktRegime.note}` });
+      direction = "neutral";
+    } else if (direction === "down" && !mktRegime.allowDown) {
+      warnings.push({ tone: "warn", text: `Señal bajista BLOQUEADA por régimen ${mktRegime.label}: ${mktRegime.note}` });
+      direction = "neutral";
+    }
+  }
 
   const align = tagged.filter((f) => (direction === "neutral" ? false : Math.sign(f.score) === Math.sign(drive))).length;
 

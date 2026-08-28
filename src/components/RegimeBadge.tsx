@@ -1,4 +1,5 @@
 import type { RegimeInfo } from "../lib/engine";
+import type { MarketRegime } from "../lib/regime";
 
 /* Espectro de volatilidad: posición del ATR% dentro de los umbrales de régimen */
 const SPECTRUM = [

@@ -19,6 +19,12 @@ import {
 } from "../lib/binance";
 import { fetchBybit, fetchOkx } from "../lib/exchanges";
 import { logAudit } from "../lib/auditLog";
+import { connectTradeStreams, getSpotCvd, getFutCvd, type CvdState } from "../lib/streams";
+import { connectL2, type L2State } from "../lib/l2";
+import { computeMicro, type MicroState } from "../lib/microstructure";
+import { fetchPositionFlow, type PositionFlow } from "../lib/positionFlow";
+import { fetchOptionsAdvanced, type OptionsAdvanced } from "../lib/options";
+import { markSource } from "../lib/dataTruth";
 
 export type Timeframe = "6h" | "12h" | "24h" | "72h" | "7d" | "14d";
 
@@ -55,6 +61,13 @@ export interface MarketData {
   premium: number;
   bookImbalance: number; // ratio bid/ask del libro (≈1)
   xCfundingGap: number; // funding Binance − media(OKX+Bybit)
+  /* ---------- datos REALES V5 ---------- */
+  spotCvd: CvdState; // CVD real spot (aggTrade)
+  futCvd: CvdState; // CVD real futuros (aggTrade)
+  l2: L2State | null; // libro L2 secuenciado
+  micro: MicroState | null; // absorción + riesgo spoof
+  posFlow: PositionFlow | null; // Top-Trader Position Flow
+  optAdv: OptionsAdvanced | null; // IV/skew/Max Pain
   candles: Candle[];
   daily: Candle[];
   oiHistory: OIPoint[];
@@ -79,6 +92,13 @@ export function useMarket(tf: Timeframe): MarketData {
   const [taker, setTaker] = useState({ ratio: 1, trend: 0 });
   const [bookImbalance, setBookImbalance] = useState(1);
   const [xCfundingGap, setXCfundingGap] = useState(0);
+  const emptyCvd: CvdState = { cvd1m: 0, cvd5m: 0, cvd15m: 0, pct5m: 0, pct15m: 0, net: 0, trades: 0, lastAt: 0 };
+  const [spotCvd, setSpotCvd] = useState<CvdState>(emptyCvd);
+  const [futCvd, setFutCvd] = useState<CvdState>(emptyCvd);
+  const [l2, setL2] = useState<L2State | null>(null);
+  const [micro, setMicro] = useState<MicroState | null>(null);
+  const [posFlow, setPosFlow] = useState<PositionFlow | null>(null);
+  const [optAdv, setOptAdv] = useState<OptionsAdvanced | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
   const [daily, setDaily] = useState<Candle[]>([]);
   const [oiHistory, setOiHistory] = useState<OIPoint[]>([]);
@@ -136,6 +156,61 @@ export function useMarket(tf: Timeframe): MarketData {
       });
     return () => {
       alive = false;
+    };
+  }, []);
+
+  /* ---------- trades REALES (aggTrade spot + futuros) → CVD observado ---------- */
+  useEffect(() => {
+    const close = connectTradeStreams();
+    const id = setInterval(() => {
+      setSpotCvd(getSpotCvd());
+      setFutCvd(getFutCvd());
+    }, 2000);
+    return () => {
+      clearInterval(id);
+      close();
+    };
+  }, []);
+
+  /* ---------- libro L2 secuenciado + microestructura ---------- */
+  useEffect(() => {
+    const close = connectL2((s) => {
+      setL2(s);
+      setMicro(computeMicro(s.frames, getSpotCvd(), getFutCvd(), 0.3));
+    });
+    return () => {
+      close();
+    };
+  }, []);
+
+  /* ---------- Top-Trader flow + opciones avanzadas (cada 5 min) ---------- */
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const pf = await fetchPositionFlow();
+        if (alive) {
+          setPosFlow(pf);
+          markSource("topflow", "real");
+        }
+      } catch {
+        if (alive) markSource("topflow", "unavailable");
+      }
+      try {
+        const oa = await fetchOptionsAdvanced();
+        if (alive) {
+          setOptAdv(oa);
+          markSource("opciones", oa.atmIv !== null || oa.skew !== null || oa.maxPain !== null ? "real" : "unavailable", oa.note);
+        }
+      } catch {
+        if (alive) markSource("opciones", "unavailable");
+      }
+    };
+    load();
+    const id = setInterval(load, 300_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
     };
   }, []);
 
@@ -333,6 +408,12 @@ export function useMarket(tf: Timeframe): MarketData {
     premium: funding.premium,
     bookImbalance,
     xCfundingGap,
+    spotCvd,
+    futCvd,
+    l2,
+    micro,
+    posFlow,
+    optAdv,
     candles,
     daily,
     oiHistory,

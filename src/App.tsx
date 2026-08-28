@@ -3,6 +3,7 @@ import { useMarket, TF_CONFIG, type Timeframe } from "./hooks/useMarket";
 import { useConfluence } from "./hooks/useConfluence";
 import { useReveal } from "./hooks/useReveal";
 import { estimateLiquidationMap, computeVerdict, atrOf, computeCvd, fundingProximity, detectSweep, liqVelocityScore } from "./lib/engine";
+import { classifyMarketRegime } from "./lib/regime";
 import {
   evaluatePredictions,
   loadPredictions,
@@ -155,6 +156,20 @@ export default function App() {
     const momBase = market.candles[Math.max(0, n - 5)];
     const momPct = momBase.close > 0 ? ((last - momBase.close) / momBase.close) * 100 : 0;
 
+    // régimen de mercado state-first (guardia de dirección)
+    const atrPctH = roundedSpot > 0 ? (atrPerHour / roundedSpot) * 100 : 0;
+    const marketRegime = classifyMarketRegime({
+      slowSlopePct,
+      fastSlopePct,
+      momPct,
+      atrPct: atrPctH,
+      oiSlope5m: market.oiSlope5m,
+      oiChange24h: market.oiChange24h,
+      priceChange24h: market.change24h,
+    });
+
+    const cvdReal = market.spotCvd.trades > 0 || market.futCvd.trades > 0;
+
     const verdict = computeVerdict({
       spot: roundedSpot,
       longPool,
@@ -186,10 +201,22 @@ export default function App() {
       sweep: detectSweep(market.candles, clusters),
       liqVelocity: liqVelocityScore(market.liqEvents, Date.now()),
       optionsPutCall: options.data?.putCallRatio ?? 1,
+      cvdSpotPct: market.spotCvd.pct15m,
+      cvdFutPct: market.futCvd.pct15m,
+      cvdReal,
+      oiRegime: marketRegime.oi,
+      absorbSide: market.micro?.absorption.side ?? "none",
+      absorbScore: market.micro?.absorption.score ?? 0,
+      spoofRisk: market.micro?.spoof.risk ?? 0,
+      posFlowZ: market.posFlow?.zscore ?? null,
+      posFlowExtreme: market.posFlow?.extreme ?? null,
+      optSkew: market.optAdv?.skew ?? null,
+      optMaxPain: market.optAdv?.maxPain ?? null,
+      marketRegime,
       weights: calibration?.weights,
     });
-    return { bins, longPool, shortPool, clusters, cvd, verdict, updatedAt: Date.now() };
-  }, [market.candles, market.liqEvents, market.bookImbalance, market.xCfundingGap, market.oi, market.fundingRate, market.fundingTrend, market.globalRatio, market.topRatio, market.takerRatio, market.oiChange24h, market.oiSlope5m, market.premium, market.change24h, market.sessionLong, market.sessionShort, roundedSpot, tf, levs, calibration, options.data]);
+    return { bins, longPool, shortPool, clusters, cvd, verdict, marketRegime, updatedAt: Date.now() };
+  }, [market.candles, market.liqEvents, market.bookImbalance, market.xCfundingGap, market.oi, market.fundingRate, market.fundingTrend, market.globalRatio, market.topRatio, market.takerRatio, market.oiChange24h, market.oiSlope5m, market.premium, market.change24h, market.sessionLong, market.sessionShort, market.spotCvd, market.futCvd, market.micro, market.posFlow, market.optAdv, roundedSpot, tf, levs, calibration, options.data]);
 
   /* ---------- track record del modelo ---------- */
   const [preds, setPreds] = useState<Prediction[]>(() => loadPredictions());
