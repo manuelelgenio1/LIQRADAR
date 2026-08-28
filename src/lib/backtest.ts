@@ -35,6 +35,7 @@ export interface BtTest {
   outcome: "acierto" | "fallo" | "caducada";
   pnlPct: number; // resultado si sigues la señal (en %)
   hoursToResolve: number;
+  oos: boolean; // true = fuera de muestra (último 40%, jamás usado para calibrar)
 }
 
 export interface BtBucket {
@@ -57,6 +58,16 @@ export interface BtResult {
   byBucket: BtBucket[];
   equity: number[]; // curva acumulada en %
   factorStats: FactorStat[]; // precisión de cada factor sobre datos históricos
+  factorStatsTrain: FactorStat[]; // solo TRAIN 60% — es lo único que alimenta la calibración
+  trainHits: number;
+  trainClosed: number;
+  trainHitRate: number | null;
+  oosHits: number;
+  oosClosed: number;
+  oosExpired: number;
+  oosHitRate: number | null; // el número honesto: muestra nunca vista por la calibración
+  oosEdgePct: number | null;
+  expectancyOosPct: number;
   posCoverage: number; // % de tests que usaron datos reales de posicionamiento
   candlesUsed: number;
   windowSize: number;
@@ -163,11 +174,12 @@ export async function runWalkForward(
 
   // precisión por factor: ¿cuántas veces coincidió con la dirección y cuántas de esas acertaron?
   const fstat = new Map<string, FactorStat>();
-  const bump = (id: string, label: string, agreed: boolean, correct: boolean) => {
-    let f = fstat.get(id);
+  const fstatTrain = new Map<string, FactorStat>();
+  const bumpInto = (m: Map<string, FactorStat>, id: string, label: string, agreed: boolean, correct: boolean) => {
+    let f = m.get(id);
     if (!f) {
       f = { id, label, agreed: 0, agreedCorrect: 0, disagreed: 0, disagreedCorrect: 0 };
-      fstat.set(id, f);
+      m.set(id, f);
     }
     if (agreed) {
       f.agreed++;
@@ -177,6 +189,10 @@ export async function runWalkForward(
       if (correct) f.disagreedCorrect++;
     }
   };
+  const bump = (id: string, label: string, agreed: boolean, correct: boolean) =>
+    bumpInto(fstat, id, label, agreed, correct);
+  const bumpTrain = (id: string, label: string, agreed: boolean, correct: boolean) =>
+    bumpInto(fstatTrain, id, label, agreed, correct);
 
   const first = WINDOW;
   const last = candles.length - horizonCandles;
@@ -250,6 +266,11 @@ export async function runWalkForward(
       optionsPutCall: 1,
     });
 
+    // split walk-forward: los primeros 60% de los pasos son TRAIN (calibración),
+    // el último 40% es OOS — jamás se usa para aprender, solo para medir
+    const oosStart = Math.floor(steps.length * 0.6);
+    const isOos = s >= oosStart;
+
     if (v.direction === "neutral") {
       neutralSkipped++;
     } else {
@@ -261,7 +282,9 @@ export async function runWalkForward(
       if (r.outcome !== "caducada") {
         for (const f of v.factors) {
           if (Math.abs(f.score) < 0.03) continue; // factor sin opinión
-          bump(f.id, f.label, Math.sign(f.score) === dirSign, correct);
+          const agreed = Math.sign(f.score) === dirSign;
+          bump(f.id, f.label, agreed, correct);
+          if (!isOos) bumpTrain(f.id, f.label, agreed, correct);
         }
       }
 
@@ -276,6 +299,7 @@ export async function runWalkForward(
         outcome: r.outcome,
         pnlPct: r.pnlPct,
         hoursToResolve: r.hours,
+        oos: isOos,
       });
     }
 
@@ -289,6 +313,15 @@ export async function runWalkForward(
   const misses = tests.filter((t) => t.outcome === "fallo").length;
   const expired = tests.filter((t) => t.outcome === "caducada").length;
   const closed = hits + misses;
+
+  // desglose TRAIN (60%) vs OOS (40%)
+  const oosTests = tests.filter((t) => t.oos);
+  const trainTests = tests.filter((t) => !t.oos);
+  const trainHits = trainTests.filter((t) => t.outcome === "acierto").length;
+  const trainClosed = trainTests.filter((t) => t.outcome !== "caducada").length;
+  const oosHits = oosTests.filter((t) => t.outcome === "acierto").length;
+  const oosClosed = oosTests.filter((t) => t.outcome !== "caducada").length;
+  const oosExpired = oosTests.filter((t) => t.outcome === "caducada").length;
 
   const bucket = (list: BtTest[]): { hits: number; closed: number } => ({
     hits: list.filter((t) => t.outcome === "acierto").length,
@@ -329,6 +362,20 @@ export async function runWalkForward(
       const rb = b.agreed > 0 ? b.agreedCorrect / b.agreed : 0;
       return rb - ra;
     }),
+    factorStatsTrain: Array.from(fstatTrain.values()).sort((a, b) => {
+      const ra = a.agreed > 0 ? a.agreedCorrect / a.agreed : 0;
+      const rb = b.agreed > 0 ? b.agreedCorrect / b.agreed : 0;
+      return rb - ra;
+    }),
+    trainHits,
+    trainClosed,
+    trainHitRate: trainClosed > 0 ? (trainHits / trainClosed) * 100 : null,
+    oosHits,
+    oosClosed,
+    oosExpired,
+    oosHitRate: oosClosed > 0 ? (oosHits / oosClosed) * 100 : null,
+    oosEdgePct: oosClosed > 0 ? (oosHits / oosClosed) * 100 - 50 : null,
+    expectancyOosPct: oosTests.length > 0 ? oosTests.reduce((a, t) => a + t.pnlPct, 0) / oosTests.length : 0,
     posCoverage: tests.length > 0 ? (posUsed / tests.length) * 100 : 0,
     candlesUsed: candles.length,
     windowSize: WINDOW,

@@ -473,6 +473,11 @@ export default function App() {
     );
   }, [market.oi, market.sources.liq, market.optAdv]);
 
+  /* brackets de liquidación: reales vía proxy local si hay .env, si no documentados */
+  useEffect(() => {
+    void getBrackets();
+  }, []);
+
   /* ---------- Agente LiqRadar: paper trading autónomo ---------- */
   const agent = usePaperAgent(analysis?.verdict ?? null, market.spot, confluence, soundOn, sendWebhook);
 
@@ -793,7 +798,7 @@ export default function App() {
 
           {/* order flow L2 */}
           <section className="panel reveal mt-5" ref={r11}>
-            <OrderBookPanel spot={market.spot} />
+            <OrderBookPanel spot={market.spot} l2={market.l2} micro={market.micro} />
           </section>
 
           {/* heatmap de funding por exchange */}

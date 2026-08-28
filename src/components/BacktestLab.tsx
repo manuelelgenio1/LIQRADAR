@@ -108,11 +108,12 @@ export function BacktestLab({ spot, onCalibrated, onHitRate }: {
       setPhase("running");
       const res = await runWalkForward(candles, 3_600_000, horizon, sim, setPct, pos);
       console.info(
-        `[LiqRadar] prueba completada: ${res.tests.length} señales · acierto ${res.hitRate == null ? "—" : res.hitRate.toFixed(1) + "%"} · edge ${res.edgePct == null ? "—" : res.edgePct.toFixed(1) + " pts"} · cobertura posicionamiento ${res.posCoverage.toFixed(0)}%`
+        `[LiqRadar] prueba completada: ${res.tests.length} señales · TRAIN ${res.trainHitRate == null ? "—" : res.trainHitRate.toFixed(1) + "%"} · OOS ${res.oosHitRate == null ? "—" : res.oosHitRate.toFixed(1) + "%"} · edge OOS ${res.oosEdgePct == null ? "—" : res.oosEdgePct.toFixed(1) + " pts"} · cobertura posicionamiento ${res.posCoverage.toFixed(0)}%`
       );
       setResult(res);
       setPhase("done");
-      if (res.hitRate !== null) onHitRate(res.hitRate, res.tests.length);
+      // el índice de confiabilidad usa el OOS: la muestra que la calibración jamás vio
+      if (res.oosHitRate !== null) onHitRate(res.oosHitRate, res.oosClosed);
     } catch (e) {
       console.error("[LiqRadar] fallo del backtest:", e);
       setErrMsg(e instanceof Error ? e.message : String(e));
@@ -122,18 +123,19 @@ export function BacktestLab({ spot, onCalibrated, onHitRate }: {
 
   const applyCalibration = () => {
     if (!result) return;
-    const weights = calibrateWeights(result.factorStats);
+    // la calibración aprende SOLO del 60% TRAIN; el 40% OOS queda intacto para medir
+    const weights = calibrateWeights(result.factorStatsTrain);
     const cal: Calibration = {
       weights,
       savedAt: Date.now(),
-      samples: result.tests.length,
+      samples: result.trainClosed,
       horizonH: result.horizonH,
       sim: result.sim,
     };
     saveCalibration(cal);
     setActiveCal(cal);
     onCalibrated(cal);
-    console.info("[LiqRadar] calibración aplicada: pesos recalculados según acierto histórico");
+    console.info("[LiqRadar] calibración aplicada: pesos aprendidos del 60% TRAIN (OOS intacto)");
   };
 
   const resetCalibration = () => {
@@ -143,7 +145,7 @@ export function BacktestLab({ spot, onCalibrated, onHitRate }: {
   };
 
   const r = result;
-  const hitColor = r?.hitRate == null ? "#5d7099" : r.hitRate >= 55 ? "#2fd6a5" : r.hitRate >= 50 ? "#ffb547" : "#ff4d6d";
+  const hitColor = r?.oosHitRate == null ? "#5d7099" : r.oosHitRate >= 55 ? "#2fd6a5" : r.oosHitRate >= 50 ? "#ffb547" : "#ff4d6d";
 
   return (
     <div className="p-5">
@@ -241,19 +243,41 @@ export function BacktestLab({ spot, onCalibrated, onHitRate }: {
 
       {phase === "done" && r && (
         <div className="mt-5 grid grid-cols-1 gap-3 xl:grid-cols-[280px_1fr_1fr]">
-          {/* tasa de acierto */}
+          {/* tasa de acierto — OOS: la muestra que la calibración jamás vio */}
           <div className="flex flex-col justify-between rounded-lg border border-line/70 bg-ink-950/50 p-4">
             <div>
-              <span className="panel-tag">tasa de acierto</span>
+              <span className="flex items-center gap-2">
+                <span className="panel-tag">acierto fuera de muestra</span>
+                <span className="rounded-sm border border-pulse/50 bg-pulse/10 px-1.5 py-0.5 font-mono text-[8px] font-700 tracking-wider text-pulse" title="Último 40% del histórico: la calibración solo aprendió del 60% anterior, así que este número no está inflado por sobreajuste.">
+                  OOS 40%
+                </span>
+              </span>
               <div className="mt-1 font-mono text-5xl font-700 tabular-nums" style={{ color: hitColor }}>
-                {r.hitRate == null ? "—" : `${r.hitRate.toFixed(1)}%`}
+                {r.oosHitRate == null ? "—" : `${r.oosHitRate.toFixed(1)}%`}
               </div>
               <div className="mt-1 font-mono text-[11px] tabular-nums text-mist">
-                edge vs azar (50%):{" "}
-                <span className="font-700" style={{ color: (r.edgePct ?? 0) >= 0 ? "#2fd6a5" : "#ff4d6d" }}>
-                  {r.edgePct == null ? "—" : `${r.edgePct >= 0 ? "+" : ""}${r.edgePct.toFixed(1)} pts`}
+                edge OOS vs azar (50%):{" "}
+                <span className="font-700" style={{ color: (r.oosEdgePct ?? 0) >= 0 ? "#2fd6a5" : "#ff4d6d" }}>
+                  {r.oosEdgePct == null ? "—" : `${r.oosEdgePct >= 0 ? "+" : ""}${r.oosEdgePct.toFixed(1)} pts`}
                 </span>
               </div>
+            </div>
+
+            {/* comparativa TRAIN vs OOS */}
+            <div className="mt-3 rounded-md border border-line/50 bg-ink-900/40 p-2.5">
+              <div className="flex justify-between font-mono text-[10px] tabular-nums">
+                <span className="text-dusk">TRAIN 60% (calibración)</span>
+                <span className="font-700 text-mist">{r.trainHitRate == null ? "—" : `${r.trainHitRate.toFixed(1)}%`} <span className="text-dusk">({r.trainHits}/{r.trainClosed})</span></span>
+              </div>
+              <div className="mt-1.5 flex justify-between font-mono text-[10px] tabular-nums">
+                <span className="text-dusk">OOS 40% (verificación)</span>
+                <span className="font-700" style={{ color: hitColor }}>{r.oosHitRate == null ? "—" : `${r.oosHitRate.toFixed(1)}%`} <span className="text-dusk">({r.oosHits}/{r.oosClosed})</span></span>
+              </div>
+              {(r.trainHitRate != null && r.oosHitRate != null && r.trainHitRate - r.oosHitRate > 8) && (
+                <div className="mt-1.5 font-mono text-[9px] leading-snug text-warn">
+                  ⚠ OOS cae {(r.trainHitRate - r.oosHitRate).toFixed(0)} pts vs TRAIN: señal de sobreajuste — la calibración pesa menos de lo que aparenta.
+                </div>
+              )}
             </div>
             <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[11px] tabular-nums">
               <span className="text-dusk">aciertos</span><span className="text-right font-700 text-long-hi">{r.hits}</span>
@@ -325,15 +349,16 @@ export function BacktestLab({ spot, onCalibrated, onHitRate }: {
         </div>
       )}
 
-      {/* precisión por factor */}
-      {phase === "done" && r && r.factorStats.length > 0 && (
+      {/* precisión por factor (TRAIN: lo único que alimenta la calibración) */}
+      {phase === "done" && r && r.factorStatsTrain.length > 0 && (
         <div className="mt-4 rounded-lg border border-line/70 bg-ink-950/50 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <span className="panel-tag">precisión histórica de cada factor</span>
+              <span className="panel-tag">precisión de cada factor · solo TRAIN 60%</span>
               <p className="mt-0.5 max-w-2xl text-[11px] leading-relaxed text-dusk">
-                De todas las señales cerradas, ¿cuántas acertaron cuando el factor apoyó la dirección? Es la prueba de
-                qué piezas del motor aportan señal real y cuáles son ruido.
+                De las señales cerradas del período de entrenamiento, ¿cuántas acertaron cuando el factor apoyó la
+                dirección? Es la prueba de qué piezas del motor aportan señal real y cuáles son ruido. El 40% OOS se
+                reserva para verificar sin inflar el resultado.
               </p>
             </div>
             <span className="rounded-md border border-line bg-ink-950/70 px-2.5 py-1 font-mono text-[10px] tabular-nums text-mist">
@@ -351,8 +376,8 @@ export function BacktestLab({ spot, onCalibrated, onHitRate }: {
                 )}
               </div>
               <p className="mt-0.5 text-[10.5px] leading-snug text-mist">
-                Recalcula los pesos del motor según el acierto histórico de cada factor: los que ganan suben, los que
-                fallan bajan. {activeCal ? `Aplicada con ${activeCal.samples} señales.` : "El modelo usa los pesos base."}
+                Recalcula los pesos del motor según el acierto de cada factor en el 60% TRAIN: los que ganan suben, los
+                que fallan bajan. El 40% OOS nunca se toca. {activeCal ? `Aplicada con ${activeCal.samples} señales TRAIN.` : "El modelo usa los pesos base."}
               </p>
             </div>
             <button
@@ -366,7 +391,7 @@ export function BacktestLab({ spot, onCalibrated, onHitRate }: {
             )}
           </div>
           <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 md:grid-cols-2">
-            {r.factorStats.map((f) => {
+            {r.factorStatsTrain.map((f) => {
               const rate = f.agreed > 0 ? (f.agreedCorrect / f.agreed) * 100 : null;
               const col = rate == null ? "#5d7099" : rate >= 55 ? "#2fd6a5" : rate >= 50 ? "#ffb547" : "#ff4d6d";
               return (

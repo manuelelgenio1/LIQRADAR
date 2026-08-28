@@ -30,18 +30,26 @@ function detectWalls(levels: BookLevel[], side: "bid" | "ask"): Wall[] {
 
 const ROWS = 13;
 
-export function OrderBookPanel({ spot }: { spot: number }) {
-  const [book, setBook] = useState<OrderBook | null>(null);
+export function OrderBookPanel({ spot, l2, micro }: {
+  spot: number;
+  l2?: import("../lib/l2").L2State | null;
+  micro?: import("../lib/microstructure").MicroState | null;
+}) {
+  const [restBook, setRestBook] = useState<OrderBook | null>(null);
   const [sim, setSim] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(0);
 
+  // L2 secuenciado real (snapshot + diff-depth) tiene prioridad; REST solo de respaldo
+  const l2Live = !!(l2 && l2.seqOk && l2.bids.length > 0);
+
   useEffect(() => {
+    if (l2Live) return; // con L2 en vivo no hace falta el polling REST
     let alive = true;
     const load = async () => {
       try {
         const b = await fetchOrderBook(100);
         if (alive && b.bids.length > 0) {
-          setBook(b);
+          setRestBook(b);
           setSim(false);
           setUpdatedAt(Date.now());
         }
@@ -55,21 +63,33 @@ export function OrderBookPanel({ spot }: { spot: number }) {
       alive = false;
       clearInterval(id);
     };
-  }, []);
+  }, [l2Live]);
+
+  // fuente unificada: L2 secuenciado (real) o foto REST
+  const book: OrderBook | null = useMemo(() => {
+    if (l2Live && l2) {
+      return {
+        bids: l2.bids.map((b) => ({ price: b.p, qty: b.q, notional: b.p * b.q })),
+        asks: l2.asks.map((a) => ({ price: a.p, qty: a.q, notional: a.p * a.q })),
+        mid: l2.mid,
+      };
+    }
+    return restBook;
+  }, [l2Live, l2, restBook]);
 
   const stats = useMemo(() => {
     if (!book) return null;
     const bidTotal = book.bids.reduce((a, l) => a + l.notional, 0);
     const askTotal = book.asks.reduce((a, l) => a + l.notional, 0);
-    const imbalance = bidTotal / (bidTotal + askTotal + 1e-9);
-    const bidWalls = detectWalls(book.bids, "bid");
-    const askWalls = detectWalls(book.asks, "ask");
+    const imbalance = l2Live && l2 ? l2.imbalance : bidTotal / (bidTotal + askTotal + 1e-9);
+    const bidWalls = l2Live && l2 ? l2.walls.filter((w) => w.side === "bid") : detectWalls(book.bids, "bid");
+    const askWalls = l2Live && l2 ? l2.walls.filter((w) => w.side === "ask") : detectWalls(book.asks, "ask");
     const bestBid = book.bids[0]?.price ?? 0;
     const bestAsk = book.asks[0]?.price ?? 0;
     const spread = bestAsk - bestBid;
-    const spreadBps = bestBid > 0 ? (spread / bestBid) * 10_000 : 0;
+    const spreadBps = l2Live && l2 ? l2.spreadBps : bestBid > 0 ? (spread / bestBid) * 10_000 : 0;
     return { bidTotal, askTotal, imbalance, bidWalls, askWalls, bestBid, bestAsk, spreadBps };
-  }, [book]);
+  }, [book, l2Live, l2]);
 
   // columnas alineadas: bids (mejor abajo) y asks (mejor arriba), ambas junto al spread
   const cols = useMemo(() => {
@@ -102,22 +122,73 @@ export function OrderBookPanel({ spot }: { spot: number }) {
           <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-mist">
             El libro muestra la liquidez <b className="text-fog">pasiva</b> esperando: los{" "}
             <span className="text-long-hi">muros de compra</span> amortiguan caídas, los{" "}
-            <span className="text-short-hi">muros de venta</span> frenan subidas. En vivo de Binance, cada 20s.
+            <span className="text-short-hi">muros de venta</span> frenan subidas.{" "}
+            {l2Live ? "Libro L2 secuenciado (snapshot + diff-depth verificado)." : "Foto REST de respaldo cada 20s."}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <span
             className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[10px] tracking-widest"
-            style={{ color: sim ? "#ffb547" : "#2fd6a5", borderColor: sim ? "rgba(255,181,71,0.4)" : "rgba(47,214,165,0.4)", background: sim ? "rgba(255,181,71,0.07)" : "rgba(47,214,165,0.07)" }}
+            style={{
+              color: l2Live ? "#2fd6a5" : sim ? "#ffb547" : "#3fb6ff",
+              borderColor: l2Live ? "rgba(47,214,165,0.4)" : sim ? "rgba(255,181,71,0.4)" : "rgba(63,182,255,0.4)",
+              background: l2Live ? "rgba(47,214,165,0.07)" : sim ? "rgba(255,181,71,0.07)" : "rgba(63,182,255,0.07)",
+            }}
+            title={l2Live ? "Diff-depth WebSocket con secuencia U/u verificada: libro 100% real" : "Snapshot REST: real pero menos frecuente"}
           >
             <span className="live-dot" style={{ background: "currentColor", color: "currentColor" }} />
-            {sim ? "SIMULADO" : "EN VIVO"}
+            {l2Live ? "L2 SECUENCIADO" : sim ? "SIMULADO" : "REST"}
           </span>
           <span className="rounded-md border border-line bg-ink-950/60 px-2.5 py-1 font-mono text-[10px] tabular-nums text-mist">
-            act. {updatedAt ? new Date(updatedAt).toLocaleTimeString("es-ES") : "—"}
+            {l2Live ? `${l2?.bids.length ?? 0} niv.` : updatedAt ? new Date(updatedAt).toLocaleTimeString("es-ES") : "—"}
           </span>
         </div>
       </div>
+
+      {/* microestructura: absorción + riesgo spoof (siempre que hay captura real) */}
+      {micro && (
+        <div className="mt-3 grid grid-cols-1 gap-2.5 md:grid-cols-2">
+          <div className="flex items-center gap-3 rounded-lg border border-line/60 bg-ink-950/40 px-3.5 py-2.5">
+            <span
+              className="h-9 w-1.5 shrink-0 rounded-full"
+              style={{ background: micro.absorption.side === "bid" ? "#2fd6a5" : micro.absorption.side === "ask" ? "#ff4d6d" : "#3a4a6b" }}
+            />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[10px] font-700 tracking-widest" style={{ color: micro.absorption.side === "bid" ? "#5ef2c4" : micro.absorption.side === "ask" ? "#ff7d95" : "#93a5c8" }}>
+                  {micro.absorption.side === "bid" ? "ABSORCIÓN COMPRADORA" : micro.absorption.side === "ask" ? "ABSORCIÓN VENDEDORA" : "SIN ABSORCIÓN"}
+                </span>
+                {micro.absorption.score > 0 && (
+                  <span className="rounded-sm bg-line/40 px-1.5 py-0.5 font-mono text-[9px] tabular-nums text-mist">{Math.round(micro.absorption.score * 100)}%</span>
+                )}
+              </div>
+              <p className="mt-0.5 truncate text-[10.5px] leading-snug text-dusk" title={micro.absorption.note}>{micro.absorption.note}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 rounded-lg border border-line/60 bg-ink-950/40 px-3.5 py-2.5">
+            <div className="relative h-9 w-9 shrink-0">
+              <svg viewBox="0 0 36 36" className="h-9 w-9 -rotate-90">
+                <circle cx="18" cy="18" r="15" fill="none" stroke="#15233c" strokeWidth="4" />
+                <circle
+                  cx="18" cy="18" r="15" fill="none"
+                  stroke={micro.spoof.risk >= 50 ? "#ff4d6d" : micro.spoof.risk >= 20 ? "#ffb547" : "#2fd6a5"}
+                  strokeWidth="4" strokeLinecap="round"
+                  strokeDasharray={`${(micro.spoof.risk / 100) * 94.2} 94.2`}
+                />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center font-mono text-[9px] font-700 tabular-nums text-fog">{Math.round(micro.spoof.risk)}</span>
+            </div>
+            <div className="min-w-0">
+              <span className="font-mono text-[10px] font-700 tracking-widest" style={{ color: micro.spoof.risk >= 50 ? "#ff7d95" : micro.spoof.risk >= 20 ? "#ffb547" : "#93a5c8" }}>
+                RIESGO SPOOF/PULL
+              </span>
+              <p className="mt-0.5 truncate text-[10.5px] leading-snug text-dusk" title={micro.spoof.note}>
+                {micro.spoof.note} <span className="text-mist">· {Math.round(micro.historySec)}s de captura</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!book || !stats || !cols ? (
         <div className="mt-4 flex h-[320px] animate-pulse items-center justify-center rounded-lg border border-line/60 bg-ink-950/40 font-mono text-xs text-dusk">

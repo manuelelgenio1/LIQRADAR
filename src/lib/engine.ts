@@ -144,12 +144,12 @@ export interface VerdictInput {
 const clamp = (v: number, lo = -1, hi = 1) => Math.min(hi, Math.max(lo, v));
 
 /* ------------------------------------------------------------
-   Distancia real de liquidación con margen de mantenimiento
-   Binance BTC tier 1: MMR 0.40%. Distancia = 1/L − MMR.
-   10x → 9.6% · 25x → 3.6% · 50x → 1.6% · 100x → 0.6%
+   Distancia real de liquidación con margen de mantenimiento por
+   tier (MMR sube con el tier de la posición). Distancia = 1/L − MMR.
+   10x → 9.0% · 25x → 3.5% · 50x → 1.5% · 100x → 0.6%
    ------------------------------------------------------------ */
-const MMR = 0.004;
-export const liqDistance = (L: number) => Math.max(1 / L - MMR, 0.001);
+import { mmrForLeverage } from "./brackets";
+export const liqDistance = (L: number) => Math.max(1 / L - mmrForLeverage(L), 0.001);
 
 /* ------------------------------------------------------------
    CVD — volumen delta acumulado (compra agresiva vs venta)
