@@ -3,7 +3,7 @@ import { biasFromCandles, confluenceGrade, type TfBias } from "../lib/engine";
 import { fetchKlines } from "../lib/binance";
 
 /* ============================================================
-   Hook de confluencia multi-timeframe: descarga 12h, 24h y 72h,
+   Hook de confluencia multi-timeframe: descarga 1h, 4h y 1d,
    corre el motor en cada uno y devuelve los sesgos + el grado de
    acuerdo. Se usa tanto para pintar el panel como para ajustar el
    índice de confiabilidad de la señal principal.
@@ -14,9 +14,9 @@ import { fetchKlines } from "../lib/binance";
    ============================================================ */
 
 const TFS = [
-  { tf: "12h", label: "12 HORAS", interval: "15m", limit: 48, ms: 900_000, range: 0.022, desc: "intradía · scalp" },
-  { tf: "24h", label: "24 HORAS", interval: "30m", limit: 48, ms: 1_800_000, range: 0.035, desc: "swing · día" },
-  { tf: "72h", label: "72 HORAS", interval: "1h", limit: 72, ms: 3_600_000, range: 0.062, desc: "posición · tendencia" },
+  { tf: "1h", label: "1 HORA", interval: "1h", limit: 96, ms: 3_600_000, range: 0.016, desc: "corto · intradía" },
+  { tf: "4h", label: "4 HORAS", interval: "4h", limit: 96, ms: 14_400_000, range: 0.035, desc: "medio · swing" },
+  { tf: "1d", label: "1 DÍA", interval: "1d", limit: 60, ms: 86_400_000, range: 0.07, desc: "largo · posición" },
 ];
 
 export { TFS as CONFLUENCE_TFS };

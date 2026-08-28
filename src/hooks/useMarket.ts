@@ -26,18 +26,17 @@ import { fetchPositionFlow, type PositionFlow } from "../lib/positionFlow";
 import { fetchOptionsAdvanced, type OptionsAdvanced } from "../lib/options";
 import { markSource } from "../lib/dataTruth";
 
-export type Timeframe = "6h" | "12h" | "24h" | "72h" | "7d" | "14d";
+export type Timeframe = "15m" | "1h" | "4h" | "1d" | "1w";
 
 export const TF_CONFIG: Record<
   Timeframe,
   { interval: string; limit: number; ms: number; range: number; label: string; lookback: number; desc: string }
 > = {
-  "6h": { interval: "15m", limit: 24, ms: 900_000, range: 0.016, label: "6H", lookback: 12, desc: "scalping" },
-  "12h": { interval: "15m", limit: 48, ms: 900_000, range: 0.022, label: "12H", lookback: 16, desc: "intradía" },
-  "24h": { interval: "30m", limit: 48, ms: 1_800_000, range: 0.035, label: "24H", lookback: 20, desc: "diario" },
-  "72h": { interval: "1h", limit: 72, ms: 3_600_000, range: 0.062, label: "72H", lookback: 24, desc: "swing corto" },
-  "7d": { interval: "4h", limit: 42, ms: 14_400_000, range: 0.115, label: "7D", lookback: 18, desc: "swing" },
-  "14d": { interval: "2h", limit: 168, ms: 7_200_000, range: 0.13, label: "14D", lookback: 24, desc: "posición" },
+  "15m": { interval: "15m", limit: 96, ms: 900_000, range: 0.008, label: "15M", lookback: 20, desc: "scalping" },
+  "1h": { interval: "1h", limit: 120, ms: 3_600_000, range: 0.016, label: "1H", lookback: 22, desc: "intradía" },
+  "4h": { interval: "4h", limit: 96, ms: 14_400_000, range: 0.035, label: "4H", lookback: 24, desc: "swing" },
+  "1d": { interval: "1d", limit: 90, ms: 86_400_000, range: 0.07, label: "1D", lookback: 26, desc: "posición" },
+  "1w": { interval: "1w", limit: 52, ms: 604_800_000, range: 0.15, label: "1W", lookback: 26, desc: "macro" },
 };
 
 export interface MarketData {

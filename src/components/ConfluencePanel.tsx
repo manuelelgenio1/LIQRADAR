@@ -16,7 +16,7 @@ function TimeAgo({ t }: { t: number }) {
 }
 
 /* ============================================================
-   Confluencia Multi-Timeframe: corre el motor en 12h, 24h y 72h
+   Confluencia Multi-Timeframe: corre el motor en 1h, 4h y 1d
    a la vez y mide cuánto coinciden. Una señal respaldada por los
    tres horizontes es mucho más fiable que una aislada.
    ============================================================ */
@@ -39,7 +39,7 @@ export function ConfluencePanel({ spot, confluence }: { spot: number; confluence
     <div className="p-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="panel-tag">confluencia MTF · 12H / 24H / 72H</div>
+          <div className="panel-tag">confluencia MTF · 1H / 4H / 1D</div>
           <h2 className="font-display mt-1 text-lg font-700 tracking-tight text-fog sm:text-xl">
             ¿Coinciden los tres horizontes?
           </h2>

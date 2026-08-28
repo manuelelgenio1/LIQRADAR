@@ -94,7 +94,7 @@ const ZONES: ZoneDef[] = [
 ];
 
 export default function App() {
-  const [tf, setTf] = useState<Timeframe>("72h");
+  const [tf, setTf] = useState<Timeframe>("4h");
   const [levs, setLevs] = useState<number[]>([10, 25, 50, 100]);
   const [tourOpen, setTourOpen] = useState(false);
   const market = useMarket(tf);
